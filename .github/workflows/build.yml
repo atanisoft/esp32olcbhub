@@ -11,6 +11,10 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
+      - name: Set up Python 3.5
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.5
       - name: Install ESP-IDF
         uses: CalinRadoni/esp-idf-v4-action@v2
         with:
