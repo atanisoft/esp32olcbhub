@@ -51,6 +51,24 @@
 #include <openlcb/SimpleStack.hxx>
 
 ///////////////////////////////////////////////////////////////////////////////
+// Set the priority of the httpd executor to the effective value used for the
+// primary OpenMRN executor. This is necessary to ensure the executor is not
+// starved of cycles due to the CAN driver.
+///////////////////////////////////////////////////////////////////////////////
+OVERRIDE_CONST_DEFERRED(httpd_server_priority, (ESP_TASK_MAIN_PRIO + 3));
+
+///////////////////////////////////////////////////////////////////////////////
+// If compiling with IDF v4.2+ enable usage of select().
+///////////////////////////////////////////////////////////////////////////////
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4,2,0)
+
+///////////////////////////////////////////////////////////////////////////////
+// Enable usage of select() for GridConnect connections.
+///////////////////////////////////////////////////////////////////////////////
+OVERRIDE_CONST_TRUE(gridconnect_tcp_use_select);
+#endif // IDF v4.2+
+
+///////////////////////////////////////////////////////////////////////////////
 // This will generate newlines after GridConnect each packet being sent.
 ///////////////////////////////////////////////////////////////////////////////
 //OVERRIDE_CONST_TRUE(gc_generate_newlines);
@@ -59,12 +77,7 @@
 // Increase the GridConnect buffer size to improve performance by bundling more
 // than one GridConnect packet into the same send() call to the socket.
 ///////////////////////////////////////////////////////////////////////////////
-OVERRIDE_CONST_DEFERRED(gridconnect_buffer_size, CONFIG_LWIP_TCP_MSS);
-
-///////////////////////////////////////////////////////////////////////////////
-// Enable usage of select() for GridConnect connections.
-///////////////////////////////////////////////////////////////////////////////
-OVERRIDE_CONST_TRUE(gridconnect_tcp_use_select);
+OVERRIDE_CONST_DEFERRED(gridconnect_buffer_size, (CONFIG_LWIP_TCP_MSS * 2));
 
 ///////////////////////////////////////////////////////////////////////////////
 // Increase the time for the buffer to fill up before sending it out over the
@@ -303,6 +316,9 @@ void app_main()
     // disable the task WDT before passing ownership of the task to the stack.
     LOG(INFO, "[WDT] Disabling WDT for app_main");
     esp_task_wdt_delete(NULL);
+
+    // increase our task priority to higher than the CAN driver
+    vTaskPrioritySet(nullptr, ESP_TASK_MAIN_PRIO + 3);
 
     LOG(INFO, "[LCC] Starting LCC stack");
     stack->loop_executor();
