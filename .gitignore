@@ -1,0 +1,10 @@
+# KiCad temporary files
+pcb/*.*-bak
+
+# ESP-IDF build files
+build
+sdkconfig
+sdkconfig.old
+
+# compressed web content
+web/*.gz
