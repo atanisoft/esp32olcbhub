@@ -17,5 +17,13 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-      - name: esp-idf build
-        uses: sebastianPsm/esp-idf-ci-action@1
+      - name: Install ESP-IDF
+        uses: CalinRadoni/esp-idf-v4-action@v2
+        with:
+          esp_idf_version: 'v4.2'
+      - name: Build
+        run: |
+          source ~/esp/esp-idf/export.sh
+          idf.py reconfigure
+          idf.py app
+          idf.py size
