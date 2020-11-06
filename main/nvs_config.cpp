@@ -144,7 +144,7 @@ void dump_config(node_config_t *config)
             ESP_ERROR_CHECK_WITHOUT_ABORT(esp_read_mac(mac, ESP_MAC_WIFI_STA));
             LOG(INFO, "[NVS] WiFi mode: %d (Station)", config->wifi_mode);
             LOG(INFO, "[NVS] Station MAC: %s", mac_to_string(mac).c_str());
-            LOG(INFO, "[NVS] Station SSID: %s", config->ap_ssid);
+            LOG(INFO, "[NVS] Station SSID: %s", config->sta_ssid);
             break;
         case WIFI_MODE_AP:
             bzero(&mac, 6);
