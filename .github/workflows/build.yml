@@ -25,3 +25,11 @@ jobs:
           idf.py reconfigure
           idf.py app
           idf.py size
+          mkdir binaries
+          cp build/ESP32OlcbHub.bin binaries
+      - name: Package binaries
+        uses: actions/upload-artifact@v1
+        with:
+          path: binaries
+        env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
