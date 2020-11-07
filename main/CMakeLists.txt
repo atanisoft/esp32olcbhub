@@ -7,6 +7,7 @@ set(deps
     esp_littlefs
     HttpServer
     OpenMRNLite
+    json
 )
 
 idf_component_register(SRCS esp32olcbhub.cpp esp32olcbhub_stack.cpp esp32olcbhub_helpers.cpp fs.cpp nvs_config.cpp web_server.cpp

@@ -36,6 +36,7 @@
 #include "DelayRebootHelper.hxx"
 #include "ConfigUpdateHelper.hxx"
 #include "web_server.hxx"
+#include "cJSON.h"
 #include <esp_ota_ops.h>
 #include <utils/FdUtils.hxx>
 #include <utils/FileUtils.hxx>
@@ -103,135 +104,6 @@ uint64_t string_to_uint64(std::string value)
     return std::stoull(value, nullptr, 16);
 }
 
-HTTP_HANDLER_IMPL(process_cdi, request)
-{
-    http::AbstractHttpResponse *response = nullptr;
-    size_t offs = request->param("offs", 0);
-    std::string param_type = request->param("type");
-    if (request->method() == http::HttpMethod::GET)
-    {
-        size_t size = request->param("size", 0);
-        if (param_type == "string")
-        {
-            LOG(VERBOSE, "[Web] CDI STRING READ offs:%d, size:%d", offs, size);
-            uint8_t buffer[256];
-            bzero(&buffer, 256);
-            HASSERT(size < 256);
-            ERRNOCHECK("seek_config", lseek(config_fd, offs, SEEK_SET));
-            FdUtils::repeated_read(config_fd, buffer, size);
-            response = new http::StringResponse(string((char *)buffer), http::MIME_TYPE_TEXT_PLAIN);
-        }
-        else if (param_type == "int")
-        {
-            LOG(VERBOSE, "[Web] CDI INT READ offs:%d, size:%d", offs, size);
-            ERRNOCHECK("seek_config", lseek(config_fd, offs, SEEK_SET));
-            switch (size)
-            {
-            case 1:
-            {
-                uint8_t data8 = 0;
-                FdUtils::repeated_read(config_fd, &data8, size);
-                response =
-                    new http::StringResponse(integer_to_string(data8), http::MIME_TYPE_TEXT_PLAIN);
-            }
-            break;
-            case 2:
-            {
-                uint16_t data16 = 0;
-                FdUtils::repeated_read(config_fd, &data16, size);
-                response =
-                    new http::StringResponse(integer_to_string(be16toh(data16)), http::MIME_TYPE_TEXT_PLAIN);
-            }
-            break;
-            case 4:
-            {
-                uint32_t data32 = 0;
-                FdUtils::repeated_read(config_fd, &data32, size);
-                response =
-                    new http::StringResponse(integer_to_string(be32toh(data32)), http::MIME_TYPE_TEXT_PLAIN);
-            }
-            break;
-            }
-        }
-        else if (param_type == "eventid")
-        {
-            LOG(VERBOSE, "[Web] CDI EVENT READ offs:%d", offs);
-            uint64_t data = 0;
-            ERRNOCHECK("seek_config", lseek(config_fd, offs, SEEK_SET));
-            FdUtils::repeated_read(config_fd, &data, sizeof(uint64_t));
-            response =
-                new http::StringResponse(uint64_to_string_hex(be64toh(data)), http::MIME_TYPE_TEXT_PLAIN);
-        }
-        else
-        {
-            LOG_ERROR("[Web] Bad request:\n%s", request->to_string().c_str());
-            request->set_status(http::HttpStatusCode::STATUS_BAD_REQUEST);
-            return nullptr;
-        }
-        LOG(VERBOSE, "[Web] CDI READ value:\n%s", response->to_string().c_str());
-    }
-    else if (request->method() == http::HttpMethod::PUT)
-    {
-        string value = request->param("value");
-        size_t size = request->param("size", 0);
-        if (param_type == "string")
-        {
-            LOG(VERBOSE, "[Web] CDI STRING WRITE offs:%d, value:%s", offs, value.c_str());
-            ERRNOCHECK("seek_config", lseek(config_fd, offs, SEEK_SET));
-            // make sure value is null terminated
-            value += '\0';
-            FdUtils::repeated_write(config_fd, value.data(), value.size());
-        }
-        else if (param_type == "int")
-        {
-            LOG(VERBOSE, "[Web] CDI INT WRITE offs:%d, size:%d, value:%s", offs, size, value.c_str());
-            ERRNOCHECK("seek_config", lseek(config_fd, offs, SEEK_SET));
-            switch (size)
-            {
-            case 1:
-            {
-                uint8_t data8 = std::stoi(value);
-                FdUtils::repeated_write(config_fd, &data8, size);
-            }
-            break;
-            case 2:
-            {
-                uint16_t data16 = htobe16(std::stoi(value));
-                FdUtils::repeated_write(config_fd, &data16, size);
-            }
-            break;
-            case 4:
-            {
-                uint32_t data32 = htobe32(std::stoul(value));
-                FdUtils::repeated_write(config_fd, &data32, size);
-            }
-            break;
-            }
-        }
-        else if (param_type == "eventid")
-        {
-            LOG(VERBOSE, "[Web] CDI EVENT WRITE offs:%d, value: %s", offs, value.c_str());
-            uint64_t data = htobe64(string_to_uint64(value));
-            ERRNOCHECK("seek_config", lseek(config_fd, offs, SEEK_SET));
-            FdUtils::repeated_write(config_fd, &data, sizeof(uint64_t));
-        }
-        else
-        {
-            LOG_ERROR("[Web] Bad request:\n%s", request->to_string().c_str());
-            request->set_status(http::HttpStatusCode::STATUS_BAD_REQUEST);
-            return nullptr;
-        }
-        request->set_status(http::HttpStatusCode::STATUS_ACCEPTED);
-        Singleton<esp32olcbhub::ConfigUpdateHelper>::instance()->trigger_update();
-    }
-    else
-    {
-        LOG_ERROR("[Web] Bad request:\n%s", request->to_string().c_str());
-        request->set_status(http::HttpStatusCode::STATUS_BAD_REQUEST);
-    }
-    return response;
-}
-
 void init_webserver(node_config_t *config, int fd)
 {
     config_fd = fd;
@@ -245,22 +117,193 @@ void init_webserver(node_config_t *config, int fd)
             StringPrintf(CAPTIVE_PORTAL_HTML, app_data->project_name, app_data->version, app_data->project_name, app_data->project_name));
     }
     http_server->redirect_uri("/", "/index.html");
-    http_server->static_uri("/index.html", indexHtmlGz, indexHtmlGz_size, http::MIME_TYPE_TEXT_HTML, http::HTTP_ENCODING_GZIP);
-    http_server->static_uri("/cash.min.js", cashJsGz, cashJsGz_size, http::MIME_TYPE_TEXT_JAVASCRIPT, http::HTTP_ENCODING_GZIP);
-    http_server->static_uri("/normalize.min.css", milligramMinCssGz, milligramMinCssGz_size, http::MIME_TYPE_TEXT_CSS, http::HTTP_ENCODING_GZIP);
-    http_server->static_uri("/milligram.min.css", normalizeMinCssGz, normalizeMinCssGz_size, http::MIME_TYPE_TEXT_CSS, http::HTTP_ENCODING_GZIP);
-    http_server->uri("/info", [&](http::HttpRequest *req) -> http::AbstractHttpResponse * {
-        const esp_app_desc_t *app_data = esp_ota_get_app_description();
-        const esp_partition_t *partition = esp_ota_get_running_partition();
-        string info =
-            StringPrintf("{\"build\":\"%s\","
-                         "\"timestamp\":\"%s %s\",\"ota\":\"%s\",\"uptime\":%llu,"
-                         "\"snip_name\":\"%s\",\"snip_hw\":\"%s\","
-                         "\"snip_sw\":\"%s\",\"node_id\":\"%s\"}",
-                         app_data->version, app_data->date, app_data->time, partition->label, esp_timer_get_time(),
-                         openlcb::SNIP_STATIC_DATA.model_name, openlcb::SNIP_STATIC_DATA.hardware_version,
-                         openlcb::SNIP_STATIC_DATA.software_version, uint64_to_string_hex(node_cfg->node_id).c_str());
-        return new http::JsonResponse(info);
+    http_server->static_uri("/index.html", indexHtmlGz, indexHtmlGz_size
+                          , http::MIME_TYPE_TEXT_HTML
+                          , http::HTTP_ENCODING_GZIP);
+    http_server->static_uri("/cash.min.js", cashJsGz, cashJsGz_size
+                          , http::MIME_TYPE_TEXT_JAVASCRIPT
+                          , http::HTTP_ENCODING_GZIP);
+    http_server->static_uri("/normalize.min.css", milligramMinCssGz
+                          , milligramMinCssGz_size, http::MIME_TYPE_TEXT_CSS
+                          , http::HTTP_ENCODING_GZIP);
+    http_server->static_uri("/milligram.min.css", normalizeMinCssGz
+                          , normalizeMinCssGz_size, http::MIME_TYPE_TEXT_CSS
+                          , http::HTTP_ENCODING_GZIP);
+    http_server->websocket_uri("/ws",
+    [](http::WebSocketFlow *socket, http::WebSocketEvent event, uint8_t *data, size_t len)
+    {
+        if (event == http::WebSocketEvent::WS_EVENT_TEXT)
+        {
+            string response = R"!^!({"resp_type":"error","error":"Request not understood"})!^!";
+            string req = string((char *)data, len);
+            cJSON *root = cJSON_Parse(req.c_str());
+            cJSON *req_type = cJSON_GetObjectItem(root, "req_type");
+            if (req_type == NULL)
+            {
+                // NO OP, the websocket is outbound only to trigger events on the client side.
+                LOG(INFO, "[Web] Failed to parse:%s", req.c_str());
+            }
+            else if (!strcmp(req_type->valuestring, "info"))
+            {
+                const esp_app_desc_t *app_data = esp_ota_get_app_description();
+                const esp_partition_t *partition = esp_ota_get_running_partition();
+                response =
+                    StringPrintf(R"!^!({"resp_type":"info","build":"%s","timestamp":"%s %s","ota":"%s","snip_name":"%s","snip_hw":"%s","snip_sw":"%s","node_id":"%s"})!^!",
+                                 app_data->version, app_data->date, app_data->time, partition->label,
+                                 openlcb::SNIP_STATIC_DATA.model_name, openlcb::SNIP_STATIC_DATA.hardware_version,
+                                 openlcb::SNIP_STATIC_DATA.software_version, uint64_to_string_hex(node_cfg->node_id).c_str());
+            }
+            else if (!strcmp(req_type->valuestring, "wifi"))
+            {
+                response =
+                    StringPrintf(R"!^!({"resp_type":"wifi","mode":%d,"sta_ssid":"%s","ap_ssid":"%s"})!^!"
+                               , node_cfg->wifi_mode, node_cfg->sta_ssid, node_cfg->ap_ssid);
+            }
+            else if (!strcmp(req_type->valuestring, "cdi-get"))
+            {
+                size_t offs = cJSON_GetObjectItem(root, "offs")->valueint;
+                std::string param_type = cJSON_GetObjectItem(root, "type")->valuestring;
+                size_t size = cJSON_GetObjectItem(root, "size")->valueint;
+                if (param_type == "string")
+                {
+                    uint8_t buffer[256];
+                    bzero(&buffer, 256);
+                    HASSERT(size < 256);
+                    ERRNOCHECK("seek_config", lseek(config_fd, offs, SEEK_SET));
+                    FdUtils::repeated_read(config_fd, buffer, size);
+                    response =
+                        StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%s"})!^!"
+                                   , cJSON_GetObjectItem(root, "target")->valuestring
+                                   , buffer);
+                }
+                else if (param_type == "int")
+                {
+                    LOG(VERBOSE, "[Web] CDI INT READ offs:%d, size:%d", offs, size);
+                    ERRNOCHECK("seek_config", lseek(config_fd, offs, SEEK_SET));
+                    switch (size)
+                    {
+                        case 1:
+                        {
+                            uint8_t data8 = 0;
+                            FdUtils::repeated_read(config_fd, &data8, size);
+                            response =
+                                StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%d"})!^!"
+                                        , cJSON_GetObjectItem(root, "target")->valuestring
+                                        , data8);
+                        }
+                        break;
+                        case 2:
+                        {
+                            uint16_t data16 = 0;
+                            FdUtils::repeated_read(config_fd, &data16, size);
+                            response =
+                                StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%d"})!^!"
+                                        , cJSON_GetObjectItem(root, "target")->valuestring
+                                        , be16toh(data16));
+                        }
+                        break;
+                        case 4:
+                        {
+                            uint32_t data32 = 0;
+                            FdUtils::repeated_read(config_fd, &data32, size);
+                            response =
+                                StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%d"})!^!"
+                                        , cJSON_GetObjectItem(root, "target")->valuestring
+                                        , be32toh(data32));
+                        }
+                        break;
+                    }
+                }
+                else if (param_type == "eventid")
+                {
+                    LOG(VERBOSE, "[Web] CDI EVENT READ offs:%d", offs);
+                    uint64_t data = 0;
+                    ERRNOCHECK("seek_config", lseek(config_fd, offs, SEEK_SET));
+                    FdUtils::repeated_read(config_fd, &data, sizeof(uint64_t));
+                    response =
+                        StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%s"})!^!"
+                                , cJSON_GetObjectItem(root, "target")->valuestring
+                                , uint64_to_string_hex(be64toh(data)).c_str());
+                }
+            }
+            else if (!strcmp(req_type->valuestring, "cdi-put"))
+            {
+                size_t offs = cJSON_GetObjectItem(root, "offs")->valueint;
+                std::string param_type = cJSON_GetObjectItem(root, "type")->valuestring;
+                size_t size = cJSON_GetObjectItem(root, "size")->valueint;
+                string value = cJSON_GetObjectItem(root, "value")->valuestring;
+                if (param_type == "string")
+                {
+                    LOG(VERBOSE, "[Web] CDI STRING WRITE offs:%d, value:%s", offs, value.c_str());
+                    ERRNOCHECK("seek_config", lseek(config_fd, offs, SEEK_SET));
+                    // make sure value is null terminated
+                    value += '\0';
+                    FdUtils::repeated_write(config_fd, value.data(), value.size());
+                    response =
+                        StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%s"})!^!"
+                                   , cJSON_GetObjectItem(root, "target")->valuestring
+                                   , value.c_str());
+                }
+                else if (param_type == "int")
+                {
+                    LOG(VERBOSE, "[Web] CDI INT WRITE offs:%d, size:%d, value:%s", offs, size, value.c_str());
+                    ERRNOCHECK("seek_config", lseek(config_fd, offs, SEEK_SET));
+                    switch (size)
+                    {
+                    case 1:
+                    {
+                        uint8_t data8 = std::stoi(value);
+                        FdUtils::repeated_write(config_fd, &data8, size);
+                        response =
+                            StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%d"})!^!"
+                                    , cJSON_GetObjectItem(root, "target")->valuestring
+                                    , data8);
+                    }
+                    break;
+                    case 2:
+                    {
+                        uint16_t data16 = htobe16(std::stoi(value));
+                        FdUtils::repeated_write(config_fd, &data16, size);
+                        response =
+                            StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%d"})!^!"
+                                    , cJSON_GetObjectItem(root, "target")->valuestring
+                                    , be16toh(data16));
+                    }
+                    break;
+                    case 4:
+                    {
+                        uint32_t data32 = htobe32(std::stoul(value));
+                        FdUtils::repeated_write(config_fd, &data32, size);
+                        response =
+                            StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%d"})!^!"
+                                    , cJSON_GetObjectItem(root, "target")->valuestring
+                                    , be32toh(data32));
+                    }
+                    break;
+                    }
+                }
+                else if (param_type == "eventid")
+                {
+                    LOG(VERBOSE, "[Web] CDI EVENT WRITE offs:%d, value: %s", offs, value.c_str());
+                    uint64_t data = htobe64(string_to_uint64(value));
+                    ERRNOCHECK("seek_config", lseek(config_fd, offs, SEEK_SET));
+                    FdUtils::repeated_write(config_fd, &data, sizeof(uint64_t));
+                    response =
+                        StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%s"})!^!"
+                                , cJSON_GetObjectItem(root, "target")->valuestring
+                                , uint64_to_string_hex(be64toh(data)).c_str());
+                }
+            }
+            else
+            {
+                // NO OP, the websocket is outbound only to trigger events on the client side.
+                LOG(INFO, req.c_str());
+            }
+            cJSON_Delete(root);
+            LOG(VERBOSE, "[Web] WS: %s -> %s", req.c_str(), response.c_str());
+            response += "\n";
+            socket->send_text(response);
+        }
     });
     http_server->uri("/fs", http::HttpMethod::GET, [&](http::HttpRequest *request) -> http::AbstractHttpResponse * {
         string path = request->param("path");
@@ -336,7 +379,6 @@ void init_webserver(node_config_t *config, int fd)
         }
         return nullptr;
     });
-    http_server->uri("/cdi", process_cdi);
     http_server->uri("/node_id", http::HttpMethod::POST, [&](http::HttpRequest *req) -> http::AbstractHttpResponse * {
         if (!req->has_param("node_id"))
         {
