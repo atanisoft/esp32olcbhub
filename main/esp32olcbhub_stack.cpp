@@ -50,9 +50,7 @@
 // than GridConnect TCP/IP stack.
 std::unique_ptr<openlcb::SimpleCanStack> stack;
 std::unique_ptr<Esp32WiFiManager> wifi_manager;
-#if TWAI_RX_PIN != GPIO_NUM_NC && TWAI_TX_PIN != GPIO_NUM_NC
 Esp32Twai twai("/dev/twai", TWAI_RX_PIN, TWAI_TX_PIN);
-#endif
 
 extern esp32olcbhub::ConfigDef cfg;
 
@@ -95,11 +93,12 @@ openlcb::SimpleCanStack *initialize_openlcb_stack(node_config_t config)
         });
     }
 
-#if TWAI_RX_PIN != GPIO_NUM_NC && TWAI_TX_PIN != GPIO_NUM_NC
-    // Initialize the TWAI driver and attach it to the stack.
-    twai.hw_init();
-    stack->add_can_port_select("/dev/twai/twai0");
-#endif
+    if (TWAI_RX_PIN != GPIO_NUM_NC && TWAI_TX_PIN != GPIO_NUM_NC)
+    {
+        // Initialize the TWAI driver and attach it to the stack.
+        twai.hw_init();
+        stack->add_can_port_select("/dev/twai/twai0");
+    }
 
     return stack.get();
 }
