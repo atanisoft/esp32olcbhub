@@ -239,7 +239,7 @@ void app_main()
     {
         LED_WIFI_Pin::set(false);
         // Count down from the overall factory reset time.
-        uint8_t hold_time = FACTORY_RESET_HOLD_TIME;
+        int8_t hold_time = FACTORY_RESET_HOLD_TIME;
         for (; hold_time > 0 && FACTORY_RESET_Pin::instance()->is_clr();
              hold_time--)
         {
@@ -256,7 +256,7 @@ void app_main()
             usleep(SEC_TO_USEC(1));
             LED_WIFI_Pin::toggle();
         }
-        if (FACTORY_RESET_Pin::instance()->is_clr() && hold_time == 0)
+        if (FACTORY_RESET_Pin::instance()->is_clr() && hold_time <= 0)
         {
             // if the button is still being held and the hold time expired
             // start a full factory reset.
@@ -277,6 +277,8 @@ void app_main()
             // nothing.
             LOG(WARNING, "Factory reset aborted!");
         }
+        // turn off the WiFi LED as it will come on when WiFi is active again.
+        LED_WIFI_Pin::set(false);
     }
 
     // Check for and reset factory reset flag.

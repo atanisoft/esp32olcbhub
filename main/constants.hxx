@@ -47,7 +47,7 @@ static constexpr bool ENABLE_PACKET_PRINTER = false;
 
 /// Number of seconds to hold the Factory Reset button to force clear all
 /// stored configuration data.
-static constexpr uint8_t FACTORY_RESET_HOLD_TIME = 10;
+static constexpr int8_t FACTORY_RESET_HOLD_TIME = 10;
 
 /// Number of seconds to hold the Factory Reset button to force regeneration of
 /// all Event IDs. NOTE: This will *NOT* clear WiFi configuration data.
