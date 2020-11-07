@@ -689,6 +689,7 @@
                     var type = $('#' + cdi_field).attr('data-type');
                     var value = $('#' + cdi_field).val();
                     webSocket.send(String.format('{"req_type":"cdi-put","offs":{0},"size":{1},"type":"{2}","target":"{3}","value":"{4}"}', offset, size, type, cdi_field, value));
+                    disable_button('save-' + cdi_field);
                 });
             });
             $('[id^=btn-refresh-]').each(function (i, e) {

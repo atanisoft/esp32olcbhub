@@ -303,6 +303,7 @@ void init_webserver(node_config_t *config, int fd)
             LOG(VERBOSE, "[Web] WS: %s -> %s", req.c_str(), response.c_str());
             response += "\n";
             socket->send_text(response);
+            Singleton<esp32olcbhub::ConfigUpdateHelper>::instance()->trigger_update();
         }
     });
     http_server->uri("/fs", http::HttpMethod::GET, [&](http::HttpRequest *request) -> http::AbstractHttpResponse * {
