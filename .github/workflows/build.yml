@@ -27,11 +27,10 @@ jobs:
           idf.py size
           mkdir binaries
           cp build/ESP32OlcbHub.bin binaries
-          echo "::set-output name=git_hash::$(git rev-parse --short HEAD)"
       - name: Package binaries
         uses: actions/upload-artifact@v1
         with:
-          name: Esp32OlcbHub-${{ steps.vars.outputs.git_hash }}
+          name: Esp32OlcbHub-$GITHUB_SHA
           path: binaries
         env:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
