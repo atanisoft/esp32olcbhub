@@ -293,7 +293,50 @@
     </section>
     <script>
         var cdi_loaders = [];
-        var ip = '';
+        var webSocket;
+        function connectWebSocket() {
+            if (webSocket) {
+                if (webSocket.readyState == 1) return; // already connected
+            }
+            var socketUrl = String.format('ws://{0}:{1}/ws', window.location.host, window.location.port);
+            webSocket = new WebSocket(socketUrl);
+            webSocket.addEventListener('open', (event) => {
+                console.log('Downloading cdi.xml to generate config dialogs');
+                fetch('/fs?path=/fs/cdi.xml&remove_nulls=true')
+                    .then(res => res.text())
+                    .then(cdi => build_cdi_dom(cdi));
+            });
+            webSocket.addEventListener('message', function(msg) {
+                var data = msg.data;
+                var nodes = data.split(/[\r\n]+/);
+                for (var i in nodes) {
+                    if (nodes[i].length > 0)
+                    {
+                        var json = JSON.parse(nodes[i]);
+                        if (json.resp_type === 'error') {
+                            console.log('ERROR:', json.error);
+                        }
+                        else if (json.resp_type === 'info') {
+                            $('#node_id').val(pad_hex(json.node_id, 12));
+                            $('#sw_version').text(json.snip_sw);
+                            $('[id^=navtab-]').each(function (i, e) {
+                                $(e).attr('href', '#');
+                            });
+                        }
+                        else if (json.resp_type === 'wifi') {
+                            $('#wifi-mode').val(json.mode);
+                            $('#wifi-sta-ssid').val(json.sta_ssid);
+                            // TODO: add SoftAP SSID printing
+                        }
+                        else if (json.resp_type === 'field-value') {
+                            $('#' + json.target).val(json.value);
+                            $('#spinner-save-' + json.target).hide();
+                            $('#spinner-refresh-' + json.target).hide();
+                        }
+                    }
+                }
+            });
+        }
         function pad_hex(str, length) {
             var hex = new Array(length + 1).join('0') + str;
             return hex.substr(-length).match(/.{1,2}/g).join('.');
@@ -344,7 +387,7 @@
             $('#btn-firmware_upload').hide();
             $('#firmware-spinner').show();
             $('#firmware_upload_results').empty();
-            fetch(ip + '/ota', { method: 'POST', body: data })
+            fetch('/ota', { method: 'POST', body: data })
                 .then(response => response.text())
                 .then(text => {
                     $('#firmware-spinner').hide();
@@ -378,10 +421,7 @@
         }
         $(function () {
             registerStringFormat();
-            console.log('Downloading cdi.xml to generate config dialogs');
-            fetch(ip + '/fs?path=/fs/cdi.xml&remove_nulls=true')
-                .then(res => res.text())
-                .then(cdi => build_cdi_dom(cdi));
+            connectWebSocket();
             add_tab_events('navtab');
             add_tab_events('configtab');
         });
@@ -529,14 +569,7 @@
                 content += String.format('<button class="button-small" id="btn-refresh-{0}">Refresh</button><div id="spinner-refresh-{0}" class="small-spinner" style="display:none;"></div></div>', node_alias);
                 content += '</div>';
                 content += String.format('<div class="row"><div class="column column-100"><small>{0}</small></div></div>', node_description);
-                cdi_loaders.push(async () => {
-                    const response = await fetch(String.format(ip + '/cdi?offs={0}&size={1}&type={2}', offset, size, node_data_type));
-                    if (response.headers.has('Content-Length')) {
-                        $('#' + node_alias).val(await response.text());
-                    } else {
-                        $('#' + node_alias).val(0);
-                    }
-                });
+                cdi_loaders.push(String.format('{"req_type":"cdi-get","offs":{0},"size":{1},"type":"{2}","target":"{3}"}', offset, size, node_data_type, node_alias));
                 console.groupEnd();
             } else if (node_data_type === 'group') {
                 if ($.isNumeric(parseInt($(group).attr('offset'))) && node_name === '') {
@@ -575,18 +608,7 @@
                 content += String.format('<button class="button-small" id="btn-refresh-{0}">Refresh</button><div id="spinner-refresh-{0}" class="small-spinner" style="display:none;"></div></div>', node_alias);
                 content += '</div>';
                 content += String.format('<div class="row"><div class="column column-100"><small>{0}</small></div></div>', node_description)
-                cdi_loaders.push(async () => {
-                    const response = await fetch(String.format(ip + '/cdi?offs={0}&size={1}&type={2}', offset, size, node_data_type));
-                    if (response.headers.has('Content-Length')) {
-                        var value = await response.text();
-                        if (node_data_type === 'eventid') {
-                            value = pad_hex(value, 16);
-                        }
-                        $('#' + node_alias).val(value);
-                    } else {
-                        $('#' + node_alias).val('');
-                    }
-                });
+                cdi_loaders.push(String.format('{"req_type":"cdi-get","offs":{0},"size":{1},"type":"{2}","target":"{3}"}', offset, size, node_data_type, node_alias));
             }
             return [content, size];
         }
@@ -646,37 +668,17 @@
             console.groupEnd();
         }
         function build_cdi_dom(cdi) {
-            // clear the loaders array
-            cdi_loaders.splice(0, cdi_loaders.length);
             var parser = new window.DOMParser();
             var doc = parser.parseFromString(cdi, "text/xml");
             var offsets_251 = calculate_offsets(doc, 251);
             var offsets_253 = calculate_offsets(doc, 253);
             cdi_dynamic_group(doc, 251, 'node_info', '#node_info_dynamic', offsets_251, '//segment[@space="251"]');
             cdi_dynamic_group(doc, 253, 'WiFi Configuration', '#config_wifi', offsets_253);
-
-            // add info loader to the end which triggers the removal of the spinner
-            cdi_loaders.push(async () => {
-                const response = await fetch(ip + '/wifi');
-                var json = await response.json();
-                $('#wifi-mode').val(json.mode);
-                $('#wifi-sta-ssid').val(json.ssid);
-            });
-            // add info loader to the end which triggers the removal of the spinner
-            cdi_loaders.push(async () => {
-                const response = await fetch(ip + '/info');
-                var json = await response.json();
-                $('#node_id').val(pad_hex(json.node_id, 12));
-                $('#sw_version').text(json.snip_sw);
-                $('[id^=navtab-]').each(function (i, e) {
-                    $(e).attr('href', '#');
-                });
-                $('#loading').hide();
-                $('#node_info').show();
-            });
-            // kick off the data loading in sequence rather than parallel since the S2
-            // will crash if too many requests are sent concurrently.
-            cdi_loaders.reduce(async (prev, cur) => { await prev; return cur(); }, Promise.resolve(null));
+            cdi_loaders.push('{"req_type":"info"}');
+            cdi_loaders.push('{"req_type":"wifi"}');
+            cdi_loaders.forEach(elem => webSocket.send(elem));
+            $('#node_info').show();
+            $('#loading').hide();
 
             $('[id^=btn-save-]').each(function (i, e) {
                 $(e).on('click', function () {
@@ -686,17 +688,7 @@
                     var size = parseInt($('#' + cdi_field).attr('data-size'));
                     var type = $('#' + cdi_field).attr('data-type');
                     var value = $('#' + cdi_field).val();
-                    console.log(offset, size, type, value);
-                    fetch(String.format(ip + '/cdi?offs={0}&size={1}&type={2}&value={3}', offset, size, type, value),
-                        { method: 'PUT', body: ' ', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })
-                        .then(response => {
-                            console.debug('Saved value for:', cdi_field);
-                            $('#spinner-save-' + cdi_field).hide();
-                        })
-                        .catch((error) => {
-                            console.debug('Error saving field:', cdi_field, error);
-                            $('#spinner-save-' + cdi_field).hide();
-                        });
+                    webSocket.send(String.format('{"req_type":"cdi-put","offs":{0},"size":{1},"type":"{2}","target":"{3}","value":"{4}"}', offset, size, type, cdi_field, value));
                 });
             });
             $('[id^=btn-refresh-]').each(function (i, e) {
@@ -706,17 +698,7 @@
                     var size = parseInt($('#' + cdi_field).attr('data-size'));
                     var type = $('#' + cdi_field).attr('data-type');
                     $('#spinner-refresh-' + cdi_field).show();
-                    fetch(String.format(ip + '/cdi?offs={0}&size={1}&type={2}', offset, size, type))
-                        .then(response => response.text())
-                        .then(text => {
-                            console.debug('Refreshed value for:', cdi_field, text);
-                            $('#' + cdi_field).val(text);
-                            $('#spinner-refresh-' + cdi_field).hide();
-                        })
-                        .catch((error) => {
-                            console.debug('Error refreshing field:', cdi_field, error);
-                            $('#spinner-refresh-' + cdi_field).hide();
-                        });
+                    webSocket.send(String.format('{"req_type":"cdi-get","offs":{0},"size":{1},"type":"{2}","target":"{3}"}', offset, size, type, cdi_field));
                     disable_button('save-' + cdi_field);
                 });
             });
