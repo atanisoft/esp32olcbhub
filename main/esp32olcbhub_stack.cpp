@@ -85,8 +85,10 @@ openlcb::SimpleCanStack *initialize_openlcb_stack(node_config_t config)
                                , ip_addr_any
                                , 1
                                , config.ap_auth
+                               , config.ap_ssid
                                , config.ap_pass));
 
+        wifi_manager->wait_for_ssid_connect(config.sta_wait_for_connect);
         wifi_manager->register_network_up_callback(
         [](esp_interface_t iface, uint32_t ip)
         {

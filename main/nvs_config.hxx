@@ -51,6 +51,7 @@ typedef struct
     char hostname_prefix[HOSTNAME_PREFIX_LEN];
     char sta_ssid[AP_SSID_PASS_LEN];
     char sta_pass[AP_SSID_PASS_LEN];
+    bool sta_wait_for_connect;
     uint32_t sta_ip;
     uint32_t sta_gw;
     uint32_t sta_nm;

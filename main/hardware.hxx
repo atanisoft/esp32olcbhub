@@ -42,15 +42,14 @@
 
 #include "constants.hxx"
 
+/// WiFi Active indicator LED. Active (ON) Low.
 GPIO_PIN(LED_WIFI, GpioOutputSafeHighInvert, LED_WIFI_PIN);
 
-#if FACTORY_RESET_PIN == GPIO_NUM_NC
-typedef DummyPinWithReadHigh FACTORY_RESET_Pin;
-#else
+/// Factory Reset Pin, pull LOW (GND) during startup to force reset of events
+/// or all configuration based on how long it is held.
 GPIO_PIN(FACTORY_RESET, GpioInputPU, FACTORY_RESET_PIN);
-#endif
 
-typedef GpioInitializer<
-    LED_WIFI_Pin,           FACTORY_RESET_Pin
-    > GpioInit;
+/// GPIO Pin initializer.
+typedef GpioInitializer<LED_WIFI_Pin, FACTORY_RESET_Pin> GpioInit;
+
 #endif // HARDWARE_HXX_

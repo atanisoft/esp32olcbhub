@@ -113,6 +113,7 @@ esp_err_t default_config(node_config_t *config)
     config->wifi_mode = DEFAULT_WIFI_MODE;
     strcpy(config->sta_ssid, DEFAULT_SSID_NAME);
     strcpy(config->sta_pass, DEFAULT_SSID_PASS);
+    config->sta_wait_for_connect = DEFAULT_WAIT_FOR_SSID_CONNECT;
     strcpy(config->ap_ssid, DEFAULT_AP_NAME);
     strcpy(config->ap_pass, DEFAULT_AP_PASS);
     strcpy(config->hostname_prefix, DEFAULT_HOSTNAME_PREFIX);

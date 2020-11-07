@@ -70,7 +70,7 @@ static constexpr gpio_num_t TWAI_RX_PIN = GPIO_NUM_4;
 static constexpr gpio_num_t TWAI_TX_PIN = GPIO_NUM_5;
 
 /// Pin connected to the Factory Reset button, active LOW.
-static constexpr gpio_num_t FACTORY_RESET_PIN = GPIO_NUM_NC;
+static constexpr gpio_num_t FACTORY_RESET_PIN = GPIO_NUM_15;
 
 /// NVS Persistence namespace.
 static constexpr char NVS_NAMESPACE[] = "nodecfg";
@@ -80,6 +80,11 @@ static constexpr char NVS_CFG_KEY[] = "cfg";
 
 /// Default Node ID that will be assigned upon Factory Reset.
 static constexpr uint64_t DEFAULT_NODE_ID = 0x050201030000;
+
+/// By default the Esp32WiFiManager will wait up to ~3min for the SSID connect
+/// process to complete, if it does not complete within this period it will
+/// call abort() causing a reboot.
+static constexpr bool DEFAULT_WAIT_FOR_SSID_CONNECT = true;
 
 /// Default WiFi operating mode that will be assigned upon Factory Reset.
 static constexpr wifi_mode_t DEFAULT_WIFI_MODE = WIFI_MODE_AP;
