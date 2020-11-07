@@ -68,5 +68,6 @@ void dump_config(node_config_t *config);
 bool set_node_id(uint64_t node_id);
 bool reconfigure_wifi(wifi_mode_t, const string &ssid, const string &password);
 bool force_factory_reset();
+bool reset_wifi_config_to_softap(node_config_t *config);
 
 #endif // NVS_CONFIG_HXX_

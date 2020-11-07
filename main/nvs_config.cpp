@@ -62,10 +62,20 @@ esp_err_t load_config(node_config_t *config)
                   "%zu vs %zu)", size, sizeof(node_config_t));
         res = ESP_FAIL;
     }
-    if (config->ap_ssid[0] == '\0')
+    if (config->wifi_mode != WIFI_MODE_STA &&
+        config->wifi_mode != WIFI_MODE_NULL &&
+        config->ap_ssid[0] == '\0')
     {
-        LOG_ERROR("[NVS] Configuration doesn't appear to be valid, SSID is "
+        LOG_ERROR("[NVS] Configuration doesn't appear to be valid, AP SSID is "
                   "blank!");
+        res = ESP_FAIL;
+    }
+    if (config->wifi_mode != WIFI_MODE_AP &&
+        config->wifi_mode != WIFI_MODE_NULL &&
+        config->sta_ssid[0] == '\0')
+    {
+        LOG_ERROR("[NVS] Configuration doesn't appear to be valid, Station "
+                  "SSID is blank!");
         res = ESP_FAIL;
     }
     return res;
@@ -101,8 +111,8 @@ esp_err_t default_config(node_config_t *config)
     bzero(config, sizeof(node_config_t));
     config->node_id = DEFAULT_NODE_ID;
     config->wifi_mode = DEFAULT_WIFI_MODE;
-    strcpy(config->sta_ssid, DEFAULT_AP_NAME);
-    strcpy(config->sta_pass, DEFAULT_AP_PASS);
+    strcpy(config->sta_ssid, DEFAULT_SSID_NAME);
+    strcpy(config->sta_pass, DEFAULT_SSID_PASS);
     strcpy(config->ap_ssid, DEFAULT_AP_NAME);
     strcpy(config->ap_pass, DEFAULT_AP_PASS);
     strcpy(config->hostname_prefix, DEFAULT_HOSTNAME_PREFIX);
@@ -230,4 +240,18 @@ bool force_factory_reset()
     config.force_reset = true;
 
     return save_config(&config) == ESP_OK;
+}
+
+bool reset_wifi_config_to_softap(node_config_t *config)
+{
+    LOG(WARNING, "[NVS] Switching to SoftAP mode as the station SSID is blank!");
+    config->wifi_mode = WIFI_MODE_AP;
+    if (strlen(config->ap_ssid) == 0)
+    {
+        LOG(WARNING, "[NVS] SoftAP SSID is blank, resetting to %s"
+          , DEFAULT_AP_NAME);
+        strcpy(config->ap_ssid, DEFAULT_AP_NAME);
+        strcpy(config->ap_pass, DEFAULT_AP_PASS);
+    }
+    return save_config(config) == ESP_OK;
 }

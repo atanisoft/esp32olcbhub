@@ -84,6 +84,14 @@ static constexpr uint64_t DEFAULT_NODE_ID = 0x050201030000;
 /// Default WiFi operating mode that will be assigned upon Factory Reset.
 static constexpr wifi_mode_t DEFAULT_WIFI_MODE = WIFI_MODE_AP;
 
+/// Default WiFi SSID to connect to upon Factory Reset.
+/// NOTE: Will be ignored if left blank.
+static constexpr char DEFAULT_SSID_NAME[] = "";
+
+/// Default WiFi SSID password to use upon Factory Reset.
+/// NOTE: Will be ignored if left blank.
+static constexpr char DEFAULT_SSID_PASS[] = "";
+
 /// Default WiFi SoftAP name that will be assigned upon Factory Reset.
 static constexpr char DEFAULT_AP_NAME[] = "esp32olcbhub";
 

@@ -67,7 +67,13 @@ openlcb::SimpleCanStack *initialize_openlcb_stack(node_config_t config)
     // If the wifi mode is enabled start the wifi manager and httpd.
     if (config.wifi_mode > WIFI_MODE_NULL && config.wifi_mode < WIFI_MODE_MAX)
     {
-        // TODO: add support for softap name to be different than sta_ssid
+        // if the wifi mode is not SoftAP and we do not have a station SSID
+        // force reset to SoftAP only.
+        if (config.wifi_mode != WIFI_MODE_AP && strlen(config.sta_ssid) == 0)
+        {
+            reset_wifi_config_to_softap(&config);
+        }
+
         wifi_manager.reset(
             new Esp32WiFiManager(config.wifi_mode != WIFI_MODE_AP ? config.sta_ssid : config.ap_ssid
                                , config.wifi_mode != WIFI_MODE_AP ? config.sta_pass : config.ap_pass
