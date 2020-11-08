@@ -63,6 +63,9 @@ static constexpr gpio_num_t I2C_SCL_PIN = GPIO_NUM_23;
 /// ready/available to be used.
 static constexpr gpio_num_t LED_WIFI_PIN = GPIO_NUM_22;
 
+/// Pin connected to an active LOW LED that is used as an activity indicator.
+static constexpr gpio_num_t LED_STATUS_PIN = GPIO_NUM_25;
+
 /// Pin connected to the TWAI/CAN Transceiver RX pin.
 static constexpr gpio_num_t TWAI_RX_PIN = GPIO_NUM_4;
 

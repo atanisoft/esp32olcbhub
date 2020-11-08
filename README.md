@@ -17,6 +17,7 @@ Pins are defined and configured in `main/constants.hxx` with the defaults below:
 | 21 | I2C SCL |
 | 22 | WiFi LED (Active LOW) |
 | 23 | I2C SDA |
+| 25 | Status/Activity LED (Active HIGH) |
 | NC | Factory Reset |
 
 The factory reset pin is not configured by default. The WiFi LED will be ON (LOW) when the SoftAP is UP or the ESP32 has received an IP address from the configured SSID.

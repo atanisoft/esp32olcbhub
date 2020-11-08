@@ -54,10 +54,20 @@ Esp32Twai twai("/dev/twai", TWAI_RX_PIN, TWAI_TX_PIN);
 
 extern esp32olcbhub::ConfigDef cfg;
 
+static void twai_init_task(void *param)
+{
+  auto stack = static_cast<openlcb::SimpleCanStack *>(param);
+  twai.hw_init();
+  stack->add_can_port_select("/dev/twai/twai0");
+  vTaskDelete(nullptr);
+}
+
 openlcb::SimpleCanStack *initialize_openlcb_stack(node_config_t config)
 {
     // Create the LCC stack.
     stack.reset(new openlcb::SimpleCanStack(config.node_id));
+
+    stack->set_tx_activity_led(LED_ACTIVITY_Pin::instance());
 
     if (ENABLE_PACKET_PRINTER)
     {
@@ -103,9 +113,11 @@ openlcb::SimpleCanStack *initialize_openlcb_stack(node_config_t config)
 
     if (TWAI_RX_PIN != GPIO_NUM_NC && TWAI_TX_PIN != GPIO_NUM_NC)
     {
-        // Initialize the TWAI driver and attach it to the stack.
-        twai.hw_init();
-        stack->add_can_port_select("/dev/twai/twai0");
+        // Initialize the TWAI driver from core 1 to ensure the TWAI driver is
+        // tied to the core that the OpenMRN stack is *NOT* running on.
+        xTaskCreatePinnedToCore(twai_init_task, "twai-init", 2048, stack.get()
+                              , config_arduino_openmrn_task_priority(), nullptr
+                              , APP_CPU_NUM);
     }
 
     return stack.get();

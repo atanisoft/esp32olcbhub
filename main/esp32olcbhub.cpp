@@ -51,13 +51,6 @@
 #include <openlcb/SimpleStack.hxx>
 
 ///////////////////////////////////////////////////////////////////////////////
-// Set the priority of the httpd executor to the effective value used for the
-// primary OpenMRN executor. This is necessary to ensure the executor is not
-// starved of cycles due to the CAN driver.
-///////////////////////////////////////////////////////////////////////////////
-OVERRIDE_CONST_DEFERRED(httpd_server_priority, (ESP_TASK_MAIN_PRIO + 3));
-
-///////////////////////////////////////////////////////////////////////////////
 // If compiling with IDF v4.2+ enable usage of select().
 ///////////////////////////////////////////////////////////////////////////////
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4,2,0)
@@ -71,19 +64,19 @@ OVERRIDE_CONST_TRUE(gridconnect_tcp_use_select);
 ///////////////////////////////////////////////////////////////////////////////
 // This will generate newlines after GridConnect each packet being sent.
 ///////////////////////////////////////////////////////////////////////////////
-//OVERRIDE_CONST_TRUE(gc_generate_newlines);
+OVERRIDE_CONST_TRUE(gc_generate_newlines);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Increase the GridConnect buffer size to improve performance by bundling more
 // than one GridConnect packet into the same send() call to the socket.
 ///////////////////////////////////////////////////////////////////////////////
-OVERRIDE_CONST_DEFERRED(gridconnect_buffer_size, (CONFIG_LWIP_TCP_MSS * 2));
+OVERRIDE_CONST_DEFERRED(gridconnect_buffer_size, CONFIG_LWIP_TCP_MSS);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Increase the time for the buffer to fill up before sending it out over the
 // socket connection.
 ///////////////////////////////////////////////////////////////////////////////
-OVERRIDE_CONST(gridconnect_buffer_delay_usec, 500);
+OVERRIDE_CONST(gridconnect_buffer_delay_usec, 1500);
 
 ///////////////////////////////////////////////////////////////////////////////
 // This limits the number of outbound GridConnect packets which limits the
@@ -96,17 +89,10 @@ OVERRIDE_CONST(gridconnect_bridge_max_outgoing_packets, 2);
 // memory used by the BufferPort.
 ///////////////////////////////////////////////////////////////////////////////
 OVERRIDE_CONST(gridconnect_bridge_max_incoming_packets, 10);
-
 ///////////////////////////////////////////////////////////////////////////////
-// Increase the listener backlog to improve concurrency of web requests.
+// Increase the listener backlog to improve concurrency.
 ///////////////////////////////////////////////////////////////////////////////
 OVERRIDE_CONST(socket_listener_backlog, 3);
-
-///////////////////////////////////////////////////////////////////////////////
-// Reduce the requests per connection to ensure http connections are recycled
-// after one request.
-///////////////////////////////////////////////////////////////////////////////
-OVERRIDE_CONST(httpd_max_req_per_connection, 1);
 
 openlcb::SimpleCanStack *initialize_openlcb_stack(node_config_t config);
 void initialize_openlcb_helpers(node_config_t config
@@ -237,7 +223,8 @@ void app_main()
     // Check for factory reset button being held on startup
     if (FACTORY_RESET_Pin::instance()->is_clr())
     {
-        LED_WIFI_Pin::set(false);
+        LED_WIFI_Pin::set(true);
+        LED_ACTIVITY_Pin::set(false);
         // Count down from the overall factory reset time.
         int8_t hold_time = FACTORY_RESET_HOLD_TIME;
         for (; hold_time > 0 && FACTORY_RESET_Pin::instance()->is_clr();
@@ -248,10 +235,12 @@ void app_main()
                 LOG(WARNING
                   , "Event ID reset in %d seconds, factory reset in %d seconds."
                   , hold_time - FACTORY_RESET_EVENTS_HOLD_TIME, hold_time);
+                LED_ACTIVITY_Pin::toggle();
             }
             else
             {
                 LOG(WARNING, "Factory reset in %d seconds.", hold_time);
+                LED_ACTIVITY_Pin::set(false);
             }
             usleep(SEC_TO_USEC(1));
             LED_WIFI_Pin::toggle();
@@ -277,8 +266,9 @@ void app_main()
             // nothing.
             LOG(WARNING, "Factory reset aborted!");
         }
-        // turn off the WiFi LED as it will come on when WiFi is active again.
+        // reset LEDs to default state.
         LED_WIFI_Pin::set(false);
+        LED_ACTIVITY_Pin::set(false);
     }
 
     // Check for and reset factory reset flag.
@@ -318,9 +308,6 @@ void app_main()
     // disable the task WDT before passing ownership of the task to the stack.
     LOG(INFO, "[WDT] Disabling WDT for app_main");
     esp_task_wdt_delete(NULL);
-
-    // increase our task priority to higher than the CAN driver
-    vTaskPrioritySet(nullptr, ESP_TASK_MAIN_PRIO + 3);
 
     LOG(INFO, "[LCC] Starting LCC stack");
     stack->loop_executor();
