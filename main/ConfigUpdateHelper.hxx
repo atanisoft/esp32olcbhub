@@ -38,7 +38,7 @@
 #include <executor/Service.hxx>
 #include <executor/StateFlow.hxx>
 #include <utils/logging.h>
-#include <openlcb/MemoryConfig.hxx>
+#include <utils/ConfigUpdateService.hxx>
 
 namespace esp32olcbhub
 {
