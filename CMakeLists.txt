@@ -23,6 +23,17 @@ idf_build_set_property(CXX_COMPILE_OPTIONS "${CXX_OPTIONS}" REPLACE)
 idf_build_set_property(COMPILE_DEFINITIONS "-D_GLIBCXX_USE_C99" APPEND)
 
 ###############################################################################
+# Uncomment the below to enable NDEBUG build mode
+# NOTE: This disables some error checking in ESP-IDF and may lead to unexpected
+# behavior in a few areas. More testing is necessary before this can be enabled
+# by default.
+###############################################################################
+
+# idf_build_set_property(COMPILE_DEFINITIONS "-DNDEBUG" APPEND)
+# idf_build_set_property(COMPILE_DEFINITIONS "-Wno-unused-variable" APPEND)
+# idf_build_set_property(COMPILE_DEFINITIONS "-Wno-unused-but-set-variable" APPEND)
+
+###############################################################################
 # Search for GZIP application
 ###############################################################################
 
