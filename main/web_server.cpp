@@ -38,6 +38,7 @@
 #include "web_server.hxx"
 #include "cJSON.h"
 #include <esp_ota_ops.h>
+#include <utils/constants.hxx>
 #include <utils/FdUtils.hxx>
 #include <utils/FileUtils.hxx>
 #include <utils/logging.h>
@@ -46,6 +47,7 @@ static std::unique_ptr<http::Httpd> http_server;
 static MDNS mdns;
 static int config_fd;
 static node_config_t *node_cfg;
+static Executor<1> http_executor{NO_THREAD()};
 
 esp_ota_handle_t otaHandle;
 esp_partition_t *ota_partition = nullptr;
@@ -104,12 +106,26 @@ uint64_t string_to_uint64(std::string value)
     return std::stoull(value, nullptr, 16);
 }
 
+static void http_exec_task(void *param)
+{
+    LOG(INFO, "[Httpd] Executor starting...");
+    http_executor.thread_body();
+    vTaskDelete(nullptr);
+}
+
 void init_webserver(node_config_t *config, int fd)
 {
     config_fd = fd;
     node_cfg = config;
+
+    LOG(INFO, "[Httpd] Initializing Executor");
+    xTaskCreatePinnedToCore(http_exec_task, "httpd"
+                          , http::config_httpd_server_stack_size(), nullptr
+                          , http::config_httpd_server_priority(), nullptr
+                          , APP_CPU_NUM);
+
     LOG(INFO, "[Httpd] Initializing webserver");
-    http_server.reset(new http::Httpd(&mdns));
+    http_server.reset(new http::Httpd(&http_executor, &mdns));
     if (config->wifi_mode == WIFI_MODE_AP || config->wifi_mode == WIFI_MODE_APSTA)
     {
         const esp_app_desc_t *app_data = esp_ota_get_app_description();
