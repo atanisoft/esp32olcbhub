@@ -156,4 +156,10 @@ static constexpr const char * const CAPTIVE_PORTAL_HTML = R"!^!(
  </body>
 </html>)!^!";
 
+#if defined __has_include
+#if __has_include("constants_user.hxx")
+#include "constants_user.hxx"
+#endif
+#endif // defined __has_include
+
 #endif // CONSTANTS_HXX_
