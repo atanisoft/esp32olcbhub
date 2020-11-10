@@ -1,0 +1,127 @@
+menu "Pin Configuration"
+    config LED_WIFI
+        int "WiFi LED"
+        range 4 33
+        default 22
+        help
+            This pin can be connected to an LED which will be ON when the WiFi
+            has connected to an SSID or the SoftAP is active.
+            NOTE: This LED is Active LOW.
+
+    config LED_STATUS
+        int "Status LED"
+        range 4 33
+        default 25
+        help
+            This pin can be connected to an LED which will be used as a status
+            indicator.
+            NOTE: This LED is Active HIGH.
+
+    config FACTORY_RESET
+        int "Factory Reset"
+        range 4 39
+        default 15
+        help
+            This pin can be used to force a factory reset of the configuration.
+
+    config TWAI_ENABLED
+        bool "Enable TWAI (CAN)"
+        default y
+
+    config TWAI_RX_PIN
+        int "TWAI (CAN) RX Pin"
+        range 4 39
+        default 4
+        depends on TWAI_ENABLED
+        help
+            This is the ESP32 pin connected to the SN6565HVD23x/MCP2551 R (RX) pin.
+            NOTE: Setting this to a value other than -1 will require an externally
+            connected CAN transceiver IC.
+
+    config TWAI_TX_PIN
+        int "TWAI (CAN) TX Pin"
+        range 4 33
+        default 5
+        depends on TWAI_ENABLED
+        help
+            This is the ESP32 pin connected to the SN6565HVD23x/MCP2551 D (TX) pin.
+            NOTE: Setting this to a value other than -1 will require an externally
+            connected CAN transceiver IC.
+
+endmenu
+
+menu "OpenLCB Configuration"
+    config OLCB_NODE_ID
+        hex "Node ID"
+        default 0x050201030000
+        help 
+            This is the LCC node identifier for the ESP32 OpenLCB Hub.
+            It is recommended, but not required, to request your own ID
+            range via:
+            https://registry.openlcb.org/requestuniqueidrange
+            The default node ID is part of a reserved range of ID values.
+
+    config OLCB_CONFIG_SYNC_SEC
+        int
+        default 5
+
+    config OLCB_PRINT_ALL_PACKETS
+        bool "Print all GridConnect packets"
+        default n
+        help
+            Enabling this option will cause all packets that are sent or
+            received to be printed by the ESP32 OpenLCB Hub.
+
+endmenu
+
+menu "WiFi Configuration"
+    config WIFI_RESTART_ON_SSID_CONNECT_FAILURE
+        bool "Restart if SSID connect fails"
+        default y
+        help
+            By default the Esp32WiFiManager will wait up to ~3min for the SSID
+            connect process to complete, if it does not complete within this
+            period it will call abort() causing a reboot.
+
+    choice WIFI_MODE
+        bool "WiFi Mode"
+        config WIFI_MODE_SOFTAP
+            bool "SoftAP only"
+        config WIFI_MODE_STATION
+            bool "Station only"
+        config WIFI_MODE_SOFTAP_STATION
+            bool "SoftAP and Station"
+        config WIFI_MODE_OFF
+            bool "Off"
+    endchoice
+
+    config WIFI_MODE
+        int
+        default 0 if WIFI_MODE_OFF
+        default 1 if WIFI_MODE_STATION
+        default 2 if WIFI_MODE_SOFTAP
+        default 3 if WIFI_MODE_SOFTAP_STATION
+
+    config WIFI_HOSTNAME_PREFIX
+        string "Hostname prefix"
+        default "esp32olcbhub_"
+        help
+            The OpenLCB node ID will be appended to this value, ie: esp32olcbhub_050201030000.
+
+    config WIFI_SOFTAP_SSID
+        string "SoftAP SSID"
+        depends on WIFI_MODE_SOFTAP || WIFI_MODE_SOFTAP_STATION
+
+    config WIFI_SOFTAP_PASSWORD
+        string "SoftAP Password"
+        depends on WIFI_MODE_SOFTAP || WIFI_MODE_SOFTAP_STATION
+    
+    config WIFI_STATION_SSID
+        string "Station SSID"
+        depends on WIFI_MODE_STATION || WIFI_MODE_SOFTAP_STATION
+
+    config WIFI_STATION_PASSWORD
+        string "Station Password"
+        depends on WIFI_MODE_STATION || WIFI_MODE_SOFTAP_STATION
+    
+endmenu

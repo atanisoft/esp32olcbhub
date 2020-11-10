@@ -32,7 +32,6 @@
  * @date 4 July 2020
  */
 
-#include "constants.hxx"
 #include "DelayRebootHelper.hxx"
 #include "ConfigUpdateHelper.hxx"
 #include "web_server.hxx"
@@ -48,6 +47,45 @@ static MDNS mdns;
 static int config_fd;
 static node_config_t *node_cfg;
 static Executor<1> http_executor{NO_THREAD()};
+
+/// Statically embedded index.html start location.
+extern const uint8_t indexHtmlGz[] asm("_binary_index_html_gz_start");
+
+/// Statically embedded index.html size.
+extern const size_t indexHtmlGz_size asm("index_html_gz_length");
+
+/// Statically embedded cash.js start location.
+extern const uint8_t cashJsGz[] asm("_binary_cash_min_js_gz_start");
+
+/// Statically embedded cash.js size.
+extern const size_t cashJsGz_size asm("cash_min_js_gz_length");
+
+/// Statically embedded milligram.min.css start location.
+extern const uint8_t milligramMinCssGz[] asm("_binary_milligram_min_css_gz_start");
+
+/// Statically embedded milligram.min.css size.
+extern const size_t milligramMinCssGz_size asm("milligram_min_css_gz_length");
+
+/// Statically embedded normalize.min.css start location.
+extern const uint8_t normalizeMinCssGz[] asm("_binary_normalize_min_css_gz_start");
+
+/// Statically embedded normalize.min.css size.
+extern const size_t normalizeMinCssGz_size asm("normalize_min_css_gz_length");
+
+/// Cative portal landing page.
+static constexpr const char * const CAPTIVE_PORTAL_HTML = R"!^!(
+<html>
+ <head>
+  <title>%s v%s</title>
+  <meta http-equiv="refresh" content="30;url='/captiveauth'" />
+ </head>
+ <body>
+  <h1>Welcome to the %s configuration portal</h1>
+  <h2>Navigate to any website and the %s configuration portal will be presented.</h2>
+  <p>If this dialog does not automatically close, please click <a href="/captiveauth">here</a>.</p>
+ </body>
+</html>)!^!";
+
 
 esp_ota_handle_t otaHandle;
 esp_partition_t *ota_partition = nullptr;

@@ -40,17 +40,17 @@
 #include <os/Gpio.hxx>
 #include <utils/GpioInitializer.hxx>
 
-#include "constants.hxx"
+#include "sdkconfig.h"
 
 /// WiFi Active indicator LED. Active (ON) Low.
-GPIO_PIN(LED_WIFI, GpioOutputSafeHighInvert, LED_WIFI_PIN);
+GPIO_PIN(LED_WIFI, GpioOutputSafeHighInvert, CONFIG_LED_WIFI);
 
 /// Activity indicator LED. Active (ON) High.
-GPIO_PIN(LED_ACTIVITY, GpioOutputSafeLow, LED_STATUS_PIN);
+GPIO_PIN(LED_ACTIVITY, GpioOutputSafeLow, CONFIG_LED_STATUS);
 
 /// Factory Reset Pin, pull LOW (GND) during startup to force reset of events
 /// or all configuration based on how long it is held.
-GPIO_PIN(FACTORY_RESET, GpioInputPU, FACTORY_RESET_PIN);
+GPIO_PIN(FACTORY_RESET, GpioInputPU, CONFIG_FACTORY_RESET);
 
 /// GPIO Pin initializer.
 typedef GpioInitializer<LED_WIFI_Pin, LED_ACTIVITY_Pin,

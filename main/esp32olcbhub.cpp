@@ -32,7 +32,6 @@
  * @date 4 July 2020
  */
 #include "sdkconfig.h"
-#include "constants.hxx"
 #include "fs.hxx"
 #include "hardware.hxx"
 #include "NodeRebootHelper.hxx"
@@ -89,16 +88,21 @@ OVERRIDE_CONST(gridconnect_bridge_max_outgoing_packets, 2);
 // memory used by the BufferPort.
 ///////////////////////////////////////////////////////////////////////////////
 OVERRIDE_CONST(gridconnect_bridge_max_incoming_packets, 10);
+
 ///////////////////////////////////////////////////////////////////////////////
 // Increase the listener backlog to improve concurrency.
 ///////////////////////////////////////////////////////////////////////////////
 OVERRIDE_CONST(socket_listener_backlog, 3);
 
-openlcb::SimpleCanStack *initialize_openlcb_stack(node_config_t config);
-void initialize_openlcb_helpers(node_config_t config
-                              , openlcb::SimpleCanStack *stack);
-void initialize_stack(node_config_t *config, openlcb::SimpleCanStack *stack
-                    , bool reset_events);
+/// Number of seconds to hold the Factory Reset button to force clear all
+/// stored configuration data.
+static constexpr int8_t FACTORY_RESET_HOLD_TIME = 10;
+
+/// Number of seconds to hold the Factory Reset button to force regeneration of
+/// all Event IDs. NOTE: This will *NOT* clear WiFi configuration data.
+static constexpr int8_t FACTORY_RESET_EVENTS_HOLD_TIME = 5;
+
+openlcb::SimpleCanStack *prepare_openlcb_stack(node_config_t *config, bool reset_events);
 
 extern "C"
 {
@@ -140,44 +144,6 @@ static const char * const reset_reasons[] =
     "Brownout reset",           // RTCWDT_BROWN_OUT_RESET   15
     "RTC Reset (Normal)",       // RTCWDT_RTC_RESET         16
 };
-
-void i2c_setup(bool scan = true)
-{
-    i2c_config_t i2c_config;
-    bzero(&i2c_config, sizeof(i2c_config_t));
-    i2c_config.mode = I2C_MODE_MASTER;
-    i2c_config.sda_io_num = I2C_SDA_PIN;
-    i2c_config.sda_pullup_en = GPIO_PULLUP_ENABLE;
-    i2c_config.scl_io_num = I2C_SCL_PIN;
-    i2c_config.scl_pullup_en = GPIO_PULLUP_ENABLE;
-    i2c_config.master.clk_speed = 100000;
-    ESP_ERROR_CHECK(i2c_param_config(I2C_NUM_0, &i2c_config));
-    ESP_ERROR_CHECK(i2c_driver_install(I2C_NUM_0, I2C_MODE_MASTER, 0, 0, 0));
-
-    if (scan)
-    {
-        LOG(INFO, "[I2C] Scanning for I2C devices...");
-        // Scan the I2C bus and dump the output of devices that respond
-        for (uint8_t addr = 3; addr < 0x7F; addr++)
-        {
-            LOG(VERBOSE, "[I2C] Scanning for device on address: %02x", addr);
-            i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-            i2c_master_start(cmd);
-            i2c_master_write_byte(cmd, (addr << 1) | I2C_MASTER_WRITE, true);
-            i2c_master_stop(cmd);
-            esp_err_t res = i2c_master_cmd_begin(I2C_NUM_0, cmd, pdMS_TO_TICKS(100));
-            i2c_cmd_link_delete(cmd);
-            if (res == ESP_OK)
-            {
-                LOG(INFO, "[I2C] I2C device %02x found", addr);
-            }
-            else if (res == ESP_ERR_TIMEOUT)
-            {
-                LOG(INFO, "[I2C] I2C device %02x timeout", addr);
-            }
-        }
-    }
-}
 
 void app_main()
 {
@@ -280,8 +246,7 @@ void app_main()
     }
 
     dump_config(&config);
-    mount_fs();
-    recursive_dump_tree(LITTLE_FS_MOUNTPOINT, cleanup_config_tree);
+    mount_fs(cleanup_config_tree);
 
     LOG(INFO, "[SNIP] version:%d, manufacturer:%s, model:%s, hw-v:%s, sw-v:%s"
       , openlcb::SNIP_STATIC_DATA.version
@@ -290,9 +255,7 @@ void app_main()
       , openlcb::SNIP_STATIC_DATA.hardware_version
       , openlcb::SNIP_STATIC_DATA.software_version);
 
-    openlcb::SimpleCanStack *stack = initialize_openlcb_stack(config);
-    initialize_openlcb_helpers(config, stack);
-    initialize_stack(&config, stack, reset_events);
+    auto *stack = prepare_openlcb_stack(&config, reset_events);
 
     // Check if the reset reason was due to brownout.
     if (reset_reason == RTCWDT_BROWN_OUT_RESET)

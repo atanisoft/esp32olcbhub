@@ -37,8 +37,11 @@
 #ifndef FS_HXX_
 #define FS_HXX_
 
-void recursive_dump_tree(const std::string &path, bool remove = false, bool first = true);
-void mount_fs();
+/// Mounts the persistent filesystem.
+/// @param cleanup will remove all files from the filesystem during startup.
+void mount_fs(bool cleanup = false);
+
+/// Unmounts the persistent filesystem.
 void unmount_fs();
 
 #endif

@@ -32,10 +32,20 @@
  * @date 4 July 2020
  */
 
-#include "constants.hxx"
+#include "sdkconfig.h"
 #include "nvs_config.hxx"
+
+// TODO: adjust format_utils.hxx not to require this line here.
+using std::string;
+
 #include <utils/format_utils.hxx>
 #include <utils/logging.h>
+
+/// NVS Persistence namespace.
+static constexpr char NVS_NAMESPACE[] = "nodecfg";
+
+/// NVS Persistence key.
+static constexpr char NVS_CFG_KEY[] = "cfg";
 
 esp_err_t load_config(node_config_t *config)
 {
@@ -105,18 +115,46 @@ esp_err_t save_config(node_config_t *config)
     return res;
 }
 
+#ifndef CONFIG_OLCB_NODE_ID
+#define CONFIG_OLCB_NODE_ID 0x050201030000
+#endif
+
+#ifndef CONFIG_WIFI_STATION_SSID
+#define CONFIG_WIFI_STATION_SSID ""
+#endif
+
+#ifndef CONFIG_WIFI_STATION_PASSWORD
+#define CONFIG_WIFI_STATION_PASSWORD ""
+#endif
+
+#ifndef CONFIG_WIFI_SOFTAP_SSID
+#define CONFIG_WIFI_SOFTAP_SSID "esp32olcbhub"
+#endif
+
+#ifndef CONFIG_WIFI_SOFTAP_PASSWORD
+#define CONFIG_WIFI_SOFTAP_PASSWORD "esp32olcbhub"
+#endif
+
+#ifndef CONFIG_WIFI_RESTART_ON_SSID_CONNECT_FAILURE
+#define CONFIG_WIFI_RESTART_ON_SSID_CONNECT_FAILURE 0
+#endif
+
+#ifndef WIFI_HOSTNAME_PREFIX
+#define WIFI_HOSTNAME_PREFIX "esp32olcbhub_"
+#endif
+
 esp_err_t default_config(node_config_t *config)
 {
     LOG(INFO, "[NVS] Initializing default configuration");
     bzero(config, sizeof(node_config_t));
-    config->node_id = DEFAULT_NODE_ID;
-    config->wifi_mode = DEFAULT_WIFI_MODE;
-    strcpy(config->sta_ssid, DEFAULT_SSID_NAME);
-    strcpy(config->sta_pass, DEFAULT_SSID_PASS);
-    config->sta_wait_for_connect = DEFAULT_WAIT_FOR_SSID_CONNECT;
-    strcpy(config->ap_ssid, DEFAULT_AP_NAME);
-    strcpy(config->ap_pass, DEFAULT_AP_PASS);
-    strcpy(config->hostname_prefix, DEFAULT_HOSTNAME_PREFIX);
+    config->node_id = CONFIG_OLCB_NODE_ID;
+    config->wifi_mode = (wifi_mode_t)CONFIG_WIFI_MODE;
+    strcpy(config->sta_ssid, CONFIG_WIFI_STATION_SSID);
+    strcpy(config->sta_pass, CONFIG_WIFI_STATION_PASSWORD);
+    config->sta_wait_for_connect = CONFIG_WIFI_RESTART_ON_SSID_CONNECT_FAILURE;
+    strcpy(config->ap_ssid, CONFIG_WIFI_SOFTAP_SSID);
+    strcpy(config->ap_pass, CONFIG_WIFI_SOFTAP_PASSWORD);
+    strcpy(config->hostname_prefix, CONFIG_WIFI_HOSTNAME_PREFIX);
     config->ap_auth = WIFI_AUTH_WPA2_PSK;
     return save_config(config);
 }
@@ -250,9 +288,9 @@ bool reset_wifi_config_to_softap(node_config_t *config)
     if (strlen(config->ap_ssid) == 0)
     {
         LOG(WARNING, "[NVS] SoftAP SSID is blank, resetting to %s"
-          , DEFAULT_AP_NAME);
-        strcpy(config->ap_ssid, DEFAULT_AP_NAME);
-        strcpy(config->ap_pass, DEFAULT_AP_PASS);
+          , CONFIG_WIFI_SOFTAP_SSID);
+        strcpy(config->ap_ssid, CONFIG_WIFI_SOFTAP_SSID);
+        strcpy(config->ap_pass, CONFIG_WIFI_SOFTAP_PASSWORD);
     }
     return save_config(config) == ESP_OK;
 }

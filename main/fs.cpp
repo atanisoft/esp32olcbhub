@@ -32,13 +32,18 @@
  * @date 4 July 2020
  */
 
-#include "constants.hxx"
 #include "fs.hxx"
-#include <utils/logging.h>
-#include <esp_vfs.h>
 #include <esp_littlefs.h>
+#include <esp_vfs.h>
+#include <utils/logging.h>
 
-void recursive_dump_tree(const string &path, bool remove, bool first)
+/// Partition name for the persistent filesystem.
+static constexpr char LITTLE_FS_PARTITION[] = "fs";
+
+/// Mount point for the persistent filesystem.
+static constexpr char LITTLE_FS_MOUNTPOINT[] = "/fs";
+
+void recursive_dump_tree(const std::string &path, bool remove = false, bool first = true)
 {
     if (first && !remove)
     {
@@ -86,7 +91,7 @@ void recursive_dump_tree(const string &path, bool remove, bool first)
     }
 }
 
-void mount_fs()
+void mount_fs(bool cleanup)
 {
     // mount littlefs filesystem.
     const esp_vfs_littlefs_conf_t conf =
@@ -103,6 +108,8 @@ void mount_fs()
     ESP_ERROR_CHECK(esp_littlefs_info(conf.partition_label, &total_len
                                     , &free_len));
     LOG(INFO, "[FS] %zu/%zu kb space used", free_len / 1024, total_len / 1024);
+
+    recursive_dump_tree(LITTLE_FS_MOUNTPOINT, cleanup);
 }
 
 void unmount_fs()
