@@ -353,7 +353,7 @@
             $('#node_id-spinner').show();
             $('#node_id-spinner').addClass('spinner');
             disable_button('node_id');
-            var url = String.format("{0}/node_id?node_id={3}", ip, uri, field, $('#node_id').val());
+            var url = '/node_id?node_id=' + $('#node_id').val();
             fetch(url, { method: 'POST', body: ' ', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })
                 .then(res => {
                     $('#node_id-spinner').hide();
