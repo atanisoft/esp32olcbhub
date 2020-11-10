@@ -45,11 +45,11 @@
 #include "web_server.hxx"
 
 #include <CDIHelper.hxx>
+#include <esp_sntp.h>
 #include <esp_task.h>
 #include <freertos_includes.h>
 #include <freertos_drivers/esp32/Esp32WiFiManager.hxx>
 #include <freertos_drivers/esp32/Esp32Twai.hxx>
-
 #include <openlcb/SimpleStack.hxx>
 #include <utils/AutoSyncFileFlow.hxx>
 #include <utils/format_utils.hxx>
@@ -115,6 +115,35 @@ static void twai_init_task(void *param)
 }
 #endif // CONFIG_TWAI_ENABLED
 
+#if CONFIG_SNTP
+static bool sntp_callback_called_previously = false;
+static void sntp_received(struct timeval *tv)
+{
+  // if this is the first time we have been called, check if the modification
+  // timestamp on the cdi.xml is older than 2020-01-01 and if so reset the
+  // modification/access timestamp to current.
+  if (!sntp_callback_called_previously)
+  {
+    struct stat statbuf;
+    stat(openlcb::CDI_FILE, &statbuf);
+    time_t mod = statbuf.st_mtime;
+    struct tm timeinfo;
+    localtime_r(&mod, &timeinfo);
+    // check if the timestamp on cdi.xml is prior to 2020 and if so, force the
+    // access/modified timestamps to the current time.
+    if (timeinfo.tm_year < (2020 - 1900))
+    {
+      LOG(INFO, "[SNTP] Updating timestamps on configuration files");
+      utime(openlcb::CDI_FILE, NULL);
+      utime(openlcb::CONFIG_FILENAME, NULL);
+    }
+    sntp_callback_called_previously = true;
+  }
+  time_t new_time = tv->tv_sec;
+  LOG(INFO, "[SNTP] Received time update, new localtime: %s", ctime(&new_time));
+}
+#endif // CONFIG_SNTP
+
 std::unique_ptr<AutoSyncFileFlow> config_sync;
 std::unique_ptr<FactoryResetHelper> factory_reset_helper;
 std::unique_ptr<esp32olcbhub::DelayRebootHelper> delayed_reboot;
@@ -164,6 +193,22 @@ openlcb::SimpleCanStack *prepare_openlcb_stack(node_config_t *config, bool reset
         {
             LED_WIFI_Pin::set(false);
         });
+#ifdef CONFIG_TIMEZONE
+        LOG(INFO, "[TimeZone] %s", CONFIG_TIMEZONE);
+        setenv("TZ", CONFIG_TIMEZONE, 1);
+        tzset();
+#endif // CONFIG_TIMEZONE
+#if CONFIG_SNTP
+        if (config->wifi_mode == WIFI_MODE_APSTA ||
+            config->wifi_mode == WIFI_MODE_STA)
+        {
+            LOG(INFO, "[SNTP] Polling %s for time updates", CONFIG_SNTP_SERVER);
+            sntp_setoperatingmode(SNTP_OPMODE_POLL);
+            sntp_setservername(0, CONFIG_SNTP_SERVER);
+            sntp_set_time_sync_notification_cb(sntp_received);
+            sntp_init();
+        }
+#endif // CONFIG_SNTP
     }
 
 #if CONFIG_OLCB_PRINT_ALL_PACKETS
