@@ -280,7 +280,7 @@ void init_webserver(node_config_t *config, int fd)
                                 , uint64_to_string_hex(be64toh(data)).c_str());
                 }
             }
-            else if (!strcmp(req_type->valuestring, "cdi-put"))
+            else if (!strcmp(req_type->valuestring, "cdi-set"))
             {
                 size_t offs = cJSON_GetObjectItem(root, "offs")->valueint;
                 std::string param_type = cJSON_GetObjectItem(root, "type")->valuestring;
@@ -349,10 +349,57 @@ void init_webserver(node_config_t *config, int fd)
                 }
                 Singleton<esp32olcbhub::ConfigUpdateHelper>::instance()->trigger_update();
             }
+            else if (!strcmp(req_type->valuestring, "nodeid-set"))
+            {
+                string nodeid = cJSON_GetObjectItem(root, "nodeid")->valuestring;
+                uint64_t new_node_id = string_to_uint64(nodeid);
+                if (new_node_id != 0 && set_node_id(new_node_id))
+                {
+                    response = R"!^!({"resp_type":"nodeid","reboot":true})!^!";
+                    Singleton<esp32olcbhub::DelayRebootHelper>::instance()->start();
+                }
+                else
+                {
+                    response = R"!^!({"resp_type":"nodeid","reboot":false})!^!";
+                }
+            }
+            else if (!strcmp(req_type->valuestring, "factory-reset"))
+            {
+                Singleton<esp32olcbhub::DelayRebootHelper>::instance()->start();
+                response = R"!^!({"resp_type":"factory-reset","reboot":true})!^!";
+            }
+            else if (!strcmp(req_type->valuestring, "wifi-scan"))
+            {
+                auto wifi = Singleton<openmrn_arduino::Esp32WiFiManager>::instance();
+                response = R"!^!({"resp_type":"wifi-scan"})!^!";
+                SyncNotifiable n;
+                wifi->start_ssid_scan(&n);
+                n.wait_for_notification();
+                size_t num_found = wifi->get_ssid_scan_result_count();
+                vector<string> seen_ssids;
+                for (int i = 0; i < num_found; i++)
+                {
+                    auto entry = wifi->get_ssid_scan_result(i);
+                    if (std::find_if(seen_ssids.begin(), seen_ssids.end(),
+                        [entry](string &s) {
+                            return s == (char *)entry.ssid;
+                        }) != seen_ssids.end())
+                    {
+                        // filter duplicate SSIDs
+                        continue;
+                    }
+                    seen_ssids.push_back((char *)entry.ssid);
+                    string part = StringPrintf(
+                        R"!^!({"resp_type":"wifi-entry","auth":%d,"rssi":%d,"ssid":"%s"})!^!",
+                        entry.authmode, entry.rssi, http::url_encode((char *)entry.ssid).c_str());
+                    part += "\n";
+                    socket->send_text(part);
+                }
+                wifi->clear_ssid_scan_results();
+            }
             else
             {
-                // NO OP, the websocket is outbound only to trigger events on the client side.
-                LOG(INFO, req.c_str());
+                LOG_ERROR("Unrecognized request: %s", req.c_str());
             }
             cJSON_Delete(root);
             LOG(VERBOSE, "[Web] WS: %s -> %s", req.c_str(), response.c_str());
@@ -389,89 +436,5 @@ void init_webserver(node_config_t *config, int fd)
         request->set_status(http::HttpStatusCode::STATUS_NOT_FOUND);
         return nullptr;
     });
-    http_server->uri("/wifi_scan", [&](http::HttpRequest *req) -> http::AbstractHttpResponse * {
-        auto wifi = Singleton<openmrn_arduino::Esp32WiFiManager>::instance();
-        string result = "[";
-        SyncNotifiable n;
-        wifi->start_ssid_scan(&n);
-        n.wait_for_notification();
-        size_t num_found = wifi->get_ssid_scan_result_count();
-        vector<string> seen_ssids;
-        for (int i = 0; i < num_found; i++)
-        {
-            auto entry = wifi->get_ssid_scan_result(i);
-            if (std::find_if(seen_ssids.begin(), seen_ssids.end(), [entry](string &s) {
-                    return s == (char *)entry.ssid;
-                }) != seen_ssids.end())
-            {
-                // filter duplicate SSIDs
-                continue;
-            }
-            seen_ssids.push_back((char *)entry.ssid);
-            if (result.length() > 1)
-            {
-                result += ",";
-            }
-            LOG(VERBOSE, "auth:%d,rssi:%d,ssid:%s", entry.authmode, entry.rssi, entry.ssid);
-            result += StringPrintf("{\"auth\":%d,\"rssi\":%d,\"ssid\":\"%s\"}",
-                                   entry.authmode, entry.rssi,
-                                   http::url_encode((char *)entry.ssid).c_str());
-        }
-        result += "]";
-        wifi->clear_ssid_scan_results();
-        return new http::JsonResponse(result);
-    });
-    http_server->uri("/factory_reset", [&](http::HttpRequest *req) -> http::AbstractHttpResponse * {
-        LOG(INFO, "[Web] Factory Reset request received");
-        if (force_factory_reset())
-        {
-            req->set_status(http::HttpStatusCode::STATUS_NO_CONTENT);
-            Singleton<esp32olcbhub::DelayRebootHelper>::instance()->start();
-        }
-        else
-        {
-            req->set_status(http::HttpStatusCode::STATUS_SERVER_ERROR);
-        }
-        return nullptr;
-    });
-    http_server->uri("/node_id", http::HttpMethod::POST, [&](http::HttpRequest *req) -> http::AbstractHttpResponse * {
-        if (!req->has_param("node_id"))
-        {
-            req->set_status(http::HttpStatusCode::STATUS_BAD_REQUEST);
-        }
-        else
-        {
-            uint64_t new_node_id = string_to_uint64(req->param("node_id"));
-            if (new_node_id != 0 && set_node_id(string_to_uint64(req->param("node_id"))))
-            {
-                req->set_status(http::HttpStatusCode::STATUS_ACCEPTED);
-                Singleton<esp32olcbhub::DelayRebootHelper>::instance()->start();
-            }
-            else
-            {
-                req->set_status(http::HttpStatusCode::STATUS_BAD_REQUEST);
-            }
-        }
-        return nullptr;
-    });
     http_server->uri("/ota", http::HttpMethod::POST, nullptr, process_ota);
-    http_server->uri("/wifi", [&](http::HttpRequest *req) -> http::AbstractHttpResponse * {
-        if (req->method() == http::HttpMethod::GET)
-        {
-            return new http::JsonResponse(StringPrintf("{\"mode\":%d,\"ssid\":\"%s\"}", node_cfg->wifi_mode, node_cfg->ap_ssid));
-        }
-        else
-        {
-            if (reconfigure_wifi((wifi_mode_t)req->param("mode", WIFI_MODE_STA), req->param("ssid"), req->param("pass")))
-            {
-                req->set_status(http::HttpStatusCode::STATUS_NO_CONTENT);
-                Singleton<esp32olcbhub::DelayRebootHelper>::instance()->start();
-            }
-            else
-            {
-                req->set_status(http::HttpStatusCode::STATUS_BAD_REQUEST);
-            }
-        }
-        return nullptr;
-    });
 }

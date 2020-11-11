@@ -94,6 +94,13 @@ OVERRIDE_CONST(gridconnect_bridge_max_incoming_packets, 10);
 ///////////////////////////////////////////////////////////////////////////////
 OVERRIDE_CONST(socket_listener_backlog, 3);
 
+///////////////////////////////////////////////////////////////////////////////
+// Increase the websocket max frame size to allow space for WiFi scan results
+// to be sent in a single frame.
+// TODO: move WS processing out of the callback so this is not needed.
+///////////////////////////////////////////////////////////////////////////////
+OVERRIDE_CONST(httpd_websocket_max_frame_size, 1024);
+
 /// Number of seconds to hold the Factory Reset button to force clear all
 /// stored configuration data.
 static constexpr int8_t FACTORY_RESET_HOLD_TIME = 10;
