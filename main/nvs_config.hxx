@@ -40,6 +40,7 @@
 #include <nvs.h>
 #include <nvs_flash.h>
 #include <stdint.h>
+#include <string>
 
 static constexpr size_t AP_SSID_PASS_LEN = 65;
 static constexpr size_t HOSTNAME_PREFIX_LEN = 21;
@@ -67,7 +68,7 @@ esp_err_t default_config(node_config_t *config);
 void nvs_init();
 void dump_config(node_config_t *config);
 bool set_node_id(uint64_t node_id);
-bool reconfigure_wifi(wifi_mode_t, const string &ssid, const string &password);
+bool reconfigure_wifi(wifi_mode_t, const std::string &ssid, const std::string &password);
 bool force_factory_reset();
 bool reset_wifi_config_to_softap(node_config_t *config);
 

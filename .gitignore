@@ -8,6 +8,3 @@ sdkconfig.old
 
 # compressed web content
 web/*.gz
-
-# user constants file
-main/constants_user.hxx
