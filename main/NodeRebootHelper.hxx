@@ -70,7 +70,7 @@ public:
         SyncNotifiable n;
         sync_->shutdown(&n);
         n.wait_for_notification();
-        shutdown_webserver();
+        //shutdown_webserver();
         LOG(INFO, "[Reboot] Shutting down LCC executor...");
         stack_->executor()->sync_run([&]()
         {
