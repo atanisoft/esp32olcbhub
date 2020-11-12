@@ -51,31 +51,35 @@ endif()
 ###############################################################################
 # Generate a compressed version of web content on-demand
 ###############################################################################
-add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/web/index.html.gz"
+add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/web/index.html.gz
     COMMAND ${GZIP} -fk ${CMAKE_CURRENT_SOURCE_DIR}/web/index.html
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/web/index.html
     VERBATIM)
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/web/index.html.gz PROPERTIES GENERATED TRUE)
 set_property(TARGET ${CMAKE_PROJECT_NAME}.elf APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/web/index.html.gz")
 
-add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/web/cash.min.js.gz"
+add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/web/cash.min.js.gz
     COMMAND ${GZIP} -fk ${CMAKE_CURRENT_SOURCE_DIR}/web/cash.min.js
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/web/cash.min.js
     VERBATIM)
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/web/cash.min.js.gz PROPERTIES GENERATED TRUE)
 set_property(TARGET ${CMAKE_PROJECT_NAME}.elf APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/web/cash.min.js.gz")
 
-add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/web/milligram.min.css.gz"
+add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/web/milligram.min.css.gz
     COMMAND ${GZIP} -fk ${CMAKE_CURRENT_SOURCE_DIR}/web/milligram.min.css
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/web/milligram.min.css
     VERBATIM)
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/web/milligram.min.css.gz PROPERTIES GENERATED TRUE)
 set_property(TARGET ${CMAKE_PROJECT_NAME}.elf APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/web/milligram.min.css.gz")
 
-add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/web/normalize.min.css.gz"
+add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/web/normalize.min.css.gz
     COMMAND ${GZIP} -fk ${CMAKE_CURRENT_SOURCE_DIR}/web/normalize.min.css
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/web/normalize.min.css
     VERBATIM)
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/web/normalize.min.css.gz PROPERTIES GENERATED TRUE)
 set_property(TARGET ${CMAKE_PROJECT_NAME}.elf APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/web/normalize.min.css.gz")
 

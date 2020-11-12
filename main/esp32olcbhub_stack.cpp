@@ -34,7 +34,6 @@
 
 #include "sdkconfig.h"
 #include "cdi.hxx"
-#include "ConfigUpdateHelper.hxx"
 #include "DelayRebootHelper.hxx"
 #include "FactoryResetHelper.hxx"
 #include "fs.hxx"
@@ -147,7 +146,6 @@ static void sntp_received(struct timeval *tv)
 std::unique_ptr<AutoSyncFileFlow> config_sync;
 std::unique_ptr<FactoryResetHelper> factory_reset_helper;
 std::unique_ptr<esp32olcbhub::DelayRebootHelper> delayed_reboot;
-std::unique_ptr<esp32olcbhub::ConfigUpdateHelper> config_helper;
 std::unique_ptr<esp32olcbhub::NodeRebootHelper> node_reboot_helper;
 std::unique_ptr<esp32olcbhub::HealthMonitor> health_mon;
 
@@ -229,10 +227,6 @@ openlcb::SimpleCanStack *prepare_openlcb_stack(node_config_t *config, bool reset
     // hook for delayed rebooter.
     delayed_reboot.reset(new esp32olcbhub::DelayRebootHelper(stack->service()));
 
-    config_helper.reset(
-        new esp32olcbhub::ConfigUpdateHelper(stack->executor()
-                                           , stack->config_service()));
-
     health_mon.reset(new esp32olcbhub::HealthMonitor(stack->service()));
 
     // Create / update CDI, if the CDI is out of date a factory reset will be
@@ -276,7 +270,7 @@ openlcb::SimpleCanStack *prepare_openlcb_stack(node_config_t *config, bool reset
     // Initialize the webserver after the config file has been created/opened.
     if (config->wifi_mode > WIFI_MODE_NULL && config->wifi_mode < WIFI_MODE_MAX)
     {
-        init_webserver(config, config_fd);
+        init_webserver(config, config_fd, stack.get());
     }
 
     return stack.get();

@@ -32,20 +32,28 @@
  * @date 4 July 2020
  */
 
+
 #include "DelayRebootHelper.hxx"
-#include "ConfigUpdateHelper.hxx"
-#include "web_server.hxx"
-#include "cJSON.h"
+#include "nvs_config.hxx"
+#include <cJSON.h>
+#include <esp_log.h>
 #include <esp_ota_ops.h>
+#include <esp_wifi.h>
+#include <freertos_drivers/esp32/Esp32WiFiManager.hxx>
+#include <Httpd.h>
+#include <HttpStringUtils.h>
+#include <openlcb/MemoryConfigClient.hxx>
+#include <os/MDNS.hxx>
 #include <utils/constants.hxx>
 #include <utils/FdUtils.hxx>
 #include <utils/FileUtils.hxx>
 #include <utils/logging.h>
 
 static std::unique_ptr<http::Httpd> http_server;
+static std::unique_ptr<openlcb::MemoryConfigClient> memory_client;
 static MDNS mdns;
-static int config_fd;
 static node_config_t *node_cfg;
+static openlcb::SimpleStackBase *node_stack;
 static Executor<1> http_executor{NO_THREAD()};
 
 /// Statically embedded index.html start location.
@@ -151,10 +159,144 @@ static void http_exec_task(void *param)
     vTaskDelete(nullptr);
 }
 
-void init_webserver(node_config_t *config, int fd)
+using openlcb::MemoryConfigClientRequest;
+using openlcb::MemoryConfigDefs;
+using openlcb::NodeHandle;
+
+class CDIRequestProcessor : public StateFlowBase
 {
-    config_fd = fd;
+public:
+    CDIRequestProcessor(http::WebSocketFlow *socket, size_t offs, size_t size
+                      , string target, string type, string value = "")
+                      : StateFlowBase(node_stack->service()), socket_(socket)
+                      , offs_(offs), size_(size), target_(target), type_(type)
+                      , value_(value)
+                      , nodeHandle_(node_stack->node()->node_id())
+    {
+        start_flow(STATE(send_request));
+    }
+
+private:
+    uint8_t attempts_{5};
+    http::WebSocketFlow *socket_;
+    size_t offs_;
+    size_t size_;
+    string target_;
+    string type_;
+    string value_{""};
+    NodeHandle nodeHandle_;
+
+    Action send_request()
+    {
+        if (!value_.empty())
+        {
+            LOG(VERBOSE, "[CDI:%s] Writing %zu bytes from offset %zu"
+              , target_.c_str(), size_, offs_);
+            return invoke_subflow_and_wait(memory_client.get()
+                                         , STATE(response_received)
+                                         , MemoryConfigClientRequest::WRITE
+                                         , nodeHandle_
+                                         , MemoryConfigDefs::SPACE_CONFIG
+                                         , offs_, value_);
+        }
+        LOG(VERBOSE, "[CDI:%s] Requesting %zu bytes from offset %zu"
+          , target_.c_str(), size_, offs_);
+        return invoke_subflow_and_wait(memory_client.get()
+                                     , STATE(response_received)
+                                     , MemoryConfigClientRequest::READ_PART
+                                     , nodeHandle_
+                                     , MemoryConfigDefs::SPACE_CONFIG
+                                     , offs_, size_);
+    }
+
+    Action response_received()
+    {
+        auto b = get_buffer_deleter(full_allocation_result(memory_client.get()));
+        string response;
+        if (b->data()->resultCode)
+        {
+            --attempts_;
+            if (attempts_ > 0)
+            {
+                LOG_ERROR("[CDI:%s] Failed to execute request: %d (%d "
+                          "attempts remaining)"
+                        , target_.c_str(), b->data()->resultCode, attempts_);
+                return yield_and_call(STATE(send_request));
+            }
+            response =
+                StringPrintf(
+                    R"!^!({"resp_type":"error","error":"Request failed: %d"})!^!"
+                  , b->data()->resultCode);
+        }
+        else if (value_.empty())
+        {
+            LOG(VERBOSE, "[CDI:%s] Received %zu bytes from offset %zu"
+              , target_.c_str(), size_, offs_);
+            if (type_ == "string")
+            {
+                response =
+                    StringPrintf(
+                        R"!^!({"resp_type":"field-value","target":"%s","value":"%s"})!^!"
+                      , target_.c_str(), b->data()->payload.c_str());
+            }
+            else if (type_ == "int")
+            {
+                uint32_t data = b->data()->payload.data()[0];
+                if (size_ == 2)
+                {
+                    uint16_t data16 = 0;
+                    memcpy(&data16, b->data()->payload.data(), sizeof(uint16_t));
+                    data = be16toh(data16);
+                }
+                else if (size_ == 4)
+                {
+                    uint32_t data32 = 0;
+                    memcpy(&data32, b->data()->payload.data(), sizeof(uint32_t));
+                    data = be32toh(data32);
+                }
+                response =
+                    StringPrintf(
+                        R"!^!({"resp_type":"field-value","target":"%s","value":"%d"})!^!"
+                    , target_.c_str(), data);
+            }
+            else if (type_ == "eventid")
+            {
+                response =
+                    StringPrintf(
+                        R"!^!({"resp_type":"field-value","target":"%s","value":"%s"})!^!"
+                    , target_.c_str()
+                    , uint64_to_string_hex(be64toh(*(b->data()->payload.data()))).c_str());
+            }
+        }
+        else
+        {
+            response =
+                StringPrintf(R"!^!({"resp_type":"field-saved","target":"%s"})!^!"
+                           , target_.c_str());
+        }
+        response += "\n";
+        socket_->send_text(response);
+
+        if (!value_.empty())
+        {
+            return invoke_subflow_and_wait(memory_client.get(), STATE(cleanup)
+                                         , MemoryConfigClientRequest::UPDATE_COMPLETE
+                                         , nodeHandle_);
+        }
+
+        return yield_and_call(STATE(cleanup));
+    }
+    Action cleanup()
+    {
+        return delete_this();
+    }
+};
+
+void init_webserver(node_config_t *config, int fd, openlcb::SimpleStackBase *stack)
+{
     node_cfg = config;
+    node_stack = stack;
+    memory_client.reset(new openlcb::MemoryConfigClient(node_stack->node(), node_stack->memory_config_handler()));
 
     LOG(INFO, "[Httpd] Initializing Executor");
     xTaskCreatePinnedToCore(http_exec_task, "httpd"
@@ -216,70 +358,11 @@ void init_webserver(node_config_t *config, int fd)
             }
             else if (!strcmp(req_type->valuestring, "cdi-get"))
             {
-                size_t offs = cJSON_GetObjectItem(root, "offs")->valueint;
-                std::string param_type = cJSON_GetObjectItem(root, "type")->valuestring;
-                size_t size = cJSON_GetObjectItem(root, "size")->valueint;
-                if (param_type == "string")
-                {
-                    uint8_t buffer[256];
-                    bzero(&buffer, 256);
-                    HASSERT(size < 256);
-                    ERRNOCHECK("seek_config", lseek(config_fd, offs, SEEK_SET));
-                    FdUtils::repeated_read(config_fd, buffer, size);
-                    response =
-                        StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%s"})!^!"
-                                   , cJSON_GetObjectItem(root, "target")->valuestring
-                                   , buffer);
-                }
-                else if (param_type == "int")
-                {
-                    LOG(VERBOSE, "[Web] CDI INT READ offs:%d, size:%d", offs, size);
-                    ERRNOCHECK("seek_config", lseek(config_fd, offs, SEEK_SET));
-                    switch (size)
-                    {
-                        case 1:
-                        {
-                            uint8_t data8 = 0;
-                            FdUtils::repeated_read(config_fd, &data8, size);
-                            response =
-                                StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%d"})!^!"
-                                        , cJSON_GetObjectItem(root, "target")->valuestring
-                                        , data8);
-                        }
-                        break;
-                        case 2:
-                        {
-                            uint16_t data16 = 0;
-                            FdUtils::repeated_read(config_fd, &data16, size);
-                            response =
-                                StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%d"})!^!"
-                                        , cJSON_GetObjectItem(root, "target")->valuestring
-                                        , be16toh(data16));
-                        }
-                        break;
-                        case 4:
-                        {
-                            uint32_t data32 = 0;
-                            FdUtils::repeated_read(config_fd, &data32, size);
-                            response =
-                                StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%d"})!^!"
-                                        , cJSON_GetObjectItem(root, "target")->valuestring
-                                        , be32toh(data32));
-                        }
-                        break;
-                    }
-                }
-                else if (param_type == "eventid")
-                {
-                    LOG(VERBOSE, "[Web] CDI EVENT READ offs:%d", offs);
-                    uint64_t data = 0;
-                    ERRNOCHECK("seek_config", lseek(config_fd, offs, SEEK_SET));
-                    FdUtils::repeated_read(config_fd, &data, sizeof(uint64_t));
-                    response =
-                        StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%s"})!^!"
-                                , cJSON_GetObjectItem(root, "target")->valuestring
-                                , uint64_to_string_hex(be64toh(data)).c_str());
-                }
+                new CDIRequestProcessor(socket, cJSON_GetObjectItem(root, "offs")->valueint
+                                      , cJSON_GetObjectItem(root, "size")->valueint
+                                      , cJSON_GetObjectItem(root, "target")->valuestring
+                                      , cJSON_GetObjectItem(root, "type")->valuestring);
+                return;
             }
             else if (!strcmp(req_type->valuestring, "cdi-set"))
             {
@@ -287,68 +370,57 @@ void init_webserver(node_config_t *config, int fd)
                 std::string param_type = cJSON_GetObjectItem(root, "type")->valuestring;
                 size_t size = cJSON_GetObjectItem(root, "size")->valueint;
                 string value = cJSON_GetObjectItem(root, "value")->valuestring;
+                string target = cJSON_GetObjectItem(root, "target")->valuestring;
                 if (param_type == "string")
                 {
-                    LOG(VERBOSE, "[Web] CDI STRING WRITE offs:%d, value:%s", offs, value.c_str());
-                    ERRNOCHECK("seek_config", lseek(config_fd, offs, SEEK_SET));
                     // make sure value is null terminated
                     value += '\0';
-                    FdUtils::repeated_write(config_fd, value.data(), value.size());
-                    response =
-                        StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%s"})!^!"
-                                   , cJSON_GetObjectItem(root, "target")->valuestring
-                                   , value.c_str());
+                    new CDIRequestProcessor(socket, offs, size, target, param_type, value);
                 }
                 else if (param_type == "int")
                 {
-                    LOG(VERBOSE, "[Web] CDI INT WRITE offs:%d, size:%d, value:%s", offs, size, value.c_str());
-                    ERRNOCHECK("seek_config", lseek(config_fd, offs, SEEK_SET));
-                    switch (size)
-                    {
-                    case 1:
+                    if (size == 1)
                     {
                         uint8_t data8 = std::stoi(value);
-                        FdUtils::repeated_write(config_fd, &data8, size);
-                        response =
-                            StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%d"})!^!"
-                                    , cJSON_GetObjectItem(root, "target")->valuestring
-                                    , data8);
+                        value.clear();
+                        value.push_back(data8);
+                        new CDIRequestProcessor(socket, offs, size, target, param_type, value);
                     }
-                    break;
-                    case 2:
+                    else if (size == 2)
                     {
-                        uint16_t data16 = htobe16(std::stoi(value));
-                        FdUtils::repeated_write(config_fd, &data16, size);
-                        response =
-                            StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%d"})!^!"
-                                    , cJSON_GetObjectItem(root, "target")->valuestring
-                                    , be16toh(data16));
+                        uint16_t data16 = std::stoi(value);
+                        value.clear();
+                        value.push_back((data16 >> 8) & 0xFF);
+                        value.push_back(data16 & 0xFF);
+                        new CDIRequestProcessor(socket, offs, size, target, param_type, value);
                     }
-                    break;
-                    case 4:
+                    else
                     {
-                        uint32_t data32 = htobe32(std::stoul(value));
-                        FdUtils::repeated_write(config_fd, &data32, size);
-                        response =
-                            StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%d"})!^!"
-                                    , cJSON_GetObjectItem(root, "target")->valuestring
-                                    , be32toh(data32));
-                    }
-                    break;
+                        uint32_t data32 = std::stoul(value);
+                        value.clear();
+                        value.push_back((data32 >> 24) & 0xFF);
+                        value.push_back((data32 >> 16) & 0xFF);
+                        value.push_back((data32 >> 8) & 0xFF);
+                        value.push_back(data32 & 0xFF);
+                        new CDIRequestProcessor(socket, offs, size, target, param_type, value);
                     }
                 }
                 else if (param_type == "eventid")
                 {
                     LOG(VERBOSE, "[Web] CDI EVENT WRITE offs:%d, value: %s", offs, value.c_str());
-                    uint64_t data = htobe64(string_to_uint64(value));
-                    ERRNOCHECK("seek_config", lseek(config_fd, offs, SEEK_SET));
-                    FdUtils::repeated_write(config_fd, &data, sizeof(uint64_t));
-                    response =
-                        StringPrintf(R"!^!({"resp_type":"field-value","target":"%s","value":"%s"})!^!"
-                                , cJSON_GetObjectItem(root, "target")->valuestring
-                                , uint64_to_string_hex(be64toh(data)).c_str());
+                    uint64_t data = string_to_uint64(value);
+                    value.clear();
+                    value.push_back((data >> 56) & 0xFF);
+                    value.push_back((data >> 48) & 0xFF);
+                    value.push_back((data >> 40) & 0xFF);
+                    value.push_back((data >> 32) & 0xFF);
+                    value.push_back((data >> 24) & 0xFF);
+                    value.push_back((data >> 16) & 0xFF);
+                    value.push_back((data >> 8) & 0xFF);
+                    value.push_back(data & 0xFF);
+                    new CDIRequestProcessor(socket, offs, size, target, param_type, value);
                 }
-                Singleton<esp32olcbhub::ConfigUpdateHelper>::instance()->trigger_update();
+                return;
             }
             else if (!strcmp(req_type->valuestring, "nodeid-set"))
             {
@@ -366,8 +438,11 @@ void init_webserver(node_config_t *config, int fd)
             }
             else if (!strcmp(req_type->valuestring, "factory-reset"))
             {
-                Singleton<esp32olcbhub::DelayRebootHelper>::instance()->start();
-                response = R"!^!({"resp_type":"factory-reset","reboot":true})!^!";
+                if (force_factory_reset())
+                {
+                    Singleton<esp32olcbhub::DelayRebootHelper>::instance()->start();
+                    response = R"!^!({"resp_type":"factory-reset","reboot":true})!^!";
+                }
             }
             else if (!strcmp(req_type->valuestring, "wifi-scan"))
             {
@@ -438,4 +513,10 @@ void init_webserver(node_config_t *config, int fd)
         return nullptr;
     });
     http_server->uri("/ota", http::HttpMethod::POST, nullptr, process_ota);
+}
+
+void shutdown_webserver()
+{
+    LOG(INFO, "[Httpd] Shutting down webserver");
+    http_server.reset(nullptr);
 }
