@@ -173,7 +173,8 @@ void init_webserver(node_config_t *config, int fd)
     http_server->redirect_uri("/", "/index.html");
     http_server->static_uri("/index.html", indexHtmlGz, indexHtmlGz_size
                           , http::MIME_TYPE_TEXT_HTML
-                          , http::HTTP_ENCODING_GZIP);
+                          , http::HTTP_ENCODING_GZIP
+                          , false);
     http_server->static_uri("/cash.min.js", cashJsGz, cashJsGz_size
                           , http::MIME_TYPE_TEXT_JAVASCRIPT
                           , http::HTTP_ENCODING_GZIP);
