@@ -37,12 +37,12 @@
 
 #include "nvs_config.hxx"
 
-#include <esp_wifi.h>
-#include <freertos_drivers/esp32/Esp32WiFiManager.hxx>
-#include <Httpd.h>
-#include <HttpStringUtils.h>
-#include <os/MDNS.hxx>
+namespace openlcb
+{
+    class SimpleStackBase;
+}
 
-void init_webserver(node_config_t *config, int fd);
+void init_webserver(node_config_t *config, int fd, openlcb::SimpleStackBase *stack);
+void shutdown_webserver();
 
 #endif // WEB_SERVER_HXX_

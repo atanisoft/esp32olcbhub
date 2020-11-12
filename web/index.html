@@ -359,6 +359,8 @@
                             $('#wifi-mode').val(json.mode);
                             $('#wifi-sta-ssid').val(json.sta_ssid);
                             // TODO: add SoftAP SSID printing
+                        } else if (json.resp_type === 'field-saved') {
+                            hide_spinner(json.target);
                         } else if (json.resp_type === 'field-value') {
                             $('#' + json.target).val(json.value);
                             hide_spinner(json.target);
