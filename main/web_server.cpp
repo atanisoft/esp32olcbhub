@@ -156,6 +156,7 @@ static void http_exec_task(void *param)
 {
     LOG(INFO, "[Httpd] Executor starting...");
     http_executor.thread_body();
+    LOG(INFO, "[Httpd] Executor stopped...");
     vTaskDelete(nullptr);
 }
 
@@ -301,7 +302,7 @@ void init_webserver(node_config_t *config, int fd, openlcb::SimpleStackBase *sta
     LOG(INFO, "[Httpd] Initializing Executor");
     xTaskCreatePinnedToCore(http_exec_task, "httpd"
                           , http::config_httpd_server_stack_size(), nullptr
-                          , http::config_httpd_server_priority(), nullptr
+                          , config_arduino_openmrn_task_priority(), nullptr
                           , APP_CPU_NUM);
 
     LOG(INFO, "[Httpd] Initializing webserver");
@@ -519,4 +520,8 @@ void shutdown_webserver()
 {
     LOG(INFO, "[Httpd] Shutting down webserver");
     http_server.reset(nullptr);
+
+    HASSERT(os_thread_self() != http_executor.thread_handle());
+    LOG(INFO, "[Httpd] Shutting down webserver executor");
+    http_executor.shutdown();
 }

@@ -279,6 +279,10 @@ void app_main()
     LOG(INFO, "[WDT] Disabling WDT for app_main");
     esp_task_wdt_delete(NULL);
 
+    // increase main task priority to ensure it is not competing with other
+    // tasks.
+    vTaskPrioritySet(nullptr, config_arduino_openmrn_task_priority());
+
     LOG(INFO, "[LCC] Starting LCC stack");
     stack->loop_executor();
 }
