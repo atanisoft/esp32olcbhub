@@ -23,6 +23,8 @@ menu "Pin Configuration"
         default 15
         help
             This pin can be used to force a factory reset of the configuration.
+            NOTE: Pin 15 is selected as a default since it typically will have
+            a pull-up resistor on the module.
 
     config TWAI_ENABLED
         bool "Enable TWAI (CAN)"
@@ -34,9 +36,13 @@ menu "Pin Configuration"
         default 4
         depends on TWAI_ENABLED
         help
-            This is the ESP32 pin connected to the SN6565HVD23x/MCP2551 R (RX) pin.
-            NOTE: Setting this to a value other than -1 will require an externally
-            connected CAN transceiver IC.
+            This is the ESP32 pin connected to the external CAN Transceiver RX
+            pin. A few CAN transceivers that have been tested successfully are:
+            MCP2551
+            SN6565HVD23x
+            TJA1051T/3
+            TJA1057GT/3
+            IFX1050GVIO
 
     config TWAI_TX_PIN
         int "TWAI (CAN) TX Pin"
@@ -44,22 +50,27 @@ menu "Pin Configuration"
         default 5
         depends on TWAI_ENABLED
         help
-            This is the ESP32 pin connected to the SN6565HVD23x/MCP2551 D (TX) pin.
-            NOTE: Setting this to a value other than -1 will require an externally
-            connected CAN transceiver IC.
+            This is the ESP32 pin connected to the external CAN Transceiver TX
+            pin. A few CAN transceivers that have been tested successfully are:
+            MCP2551
+            SN6565HVD23x
+            TJA1051T/3
+            TJA1057GT/3
+            IFX1050GVIO
 
 endmenu
 
 menu "OpenLCB Configuration"
     config OLCB_NODE_ID
         hex "Node ID"
-        default 0x050201030000
+        default 0x05020103FFFF
         help 
-            This is the LCC node identifier for the ESP32 OpenLCB Hub.
-            It is recommended, but not required, to request your own ID
-            range via:
+            This is the OpenLCB unique node identifier for the ESP32 OpenLCB
+            Hub. It is recommended, but not required, to request your own
+            identifier range via:
             https://registry.openlcb.org/requestuniqueidrange
-            The default node ID is part of a reserved range of ID values.
+            The default node identifier is part of a reserved range of
+            identifier values.
 
     config OLCB_CONFIG_SYNC_SEC
         int
@@ -79,9 +90,9 @@ menu "WiFi Configuration"
         bool "Restart if SSID connect fails"
         default y
         help
-            By default the Esp32WiFiManager will wait up to ~3min for the SSID
+            By default the ESP32 OpenLCB Hub will wait up to ~3min for the SSID
             connect process to complete, if it does not complete within this
-            period it will call abort() causing a reboot.
+            period it will reboot and try again.
 
     choice WIFI_MODE
         bool "WiFi Mode"
@@ -106,7 +117,8 @@ menu "WiFi Configuration"
         string "Hostname prefix"
         default "esp32olcbhub_"
         help
-            The OpenLCB node ID will be appended to this value, ie: esp32olcbhub_050201030000.
+            The OpenLCB node identifier will be appended to this value, ie:
+            esp32olcbhub_05020103ffff.
 
     config WIFI_SOFTAP_SSID
         string "SoftAP SSID"
