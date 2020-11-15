@@ -69,7 +69,7 @@ OVERRIDE_CONST_TRUE(gc_generate_newlines);
 // Increase the GridConnect buffer size to improve performance by bundling more
 // than one GridConnect packet into the same send() call to the socket.
 ///////////////////////////////////////////////////////////////////////////////
-OVERRIDE_CONST_DEFERRED(gridconnect_buffer_size, (CONFIG_LWIP_TCP_MSS / 2));
+OVERRIDE_CONST_DEFERRED(gridconnect_buffer_size, CONFIG_LWIP_TCP_MSS);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Increase the time for the buffer to fill up before sending it out over the
@@ -81,7 +81,7 @@ OVERRIDE_CONST(gridconnect_buffer_delay_usec, 1500);
 // This limits the number of outbound GridConnect packets which limits the
 // memory used by the BufferPort.
 ///////////////////////////////////////////////////////////////////////////////
-OVERRIDE_CONST(gridconnect_bridge_max_outgoing_packets, 2);
+OVERRIDE_CONST(gridconnect_bridge_max_outgoing_packets, 10);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Increase the listener backlog to improve concurrency.
@@ -94,6 +94,12 @@ OVERRIDE_CONST(socket_listener_backlog, 2);
 // TODO: move WS processing out of the callback so this is not needed.
 ///////////////////////////////////////////////////////////////////////////////
 OVERRIDE_CONST(httpd_websocket_max_frame_size, 1024);
+
+///////////////////////////////////////////////////////////////////////////////
+// Increase the CAN RX frame buffer size to reduce overruns when the hub has
+// high load (ie: large datagram transport).
+///////////////////////////////////////////////////////////////////////////////
+OVERRIDE_CONST(can_rx_buffer_size, 64);
 
 /// Number of seconds to hold the Factory Reset button to force clear all
 /// stored configuration data.
