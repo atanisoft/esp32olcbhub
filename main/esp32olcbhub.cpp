@@ -81,18 +81,12 @@ OVERRIDE_CONST(gridconnect_buffer_delay_usec, 1500);
 // This limits the number of outbound GridConnect packets which limits the
 // memory used by the BufferPort.
 ///////////////////////////////////////////////////////////////////////////////
-OVERRIDE_CONST(gridconnect_bridge_max_outgoing_packets, 2);
-
-///////////////////////////////////////////////////////////////////////////////
-// This limits the number of inbound GridConnect packets which limits the
-// memory used by the BufferPort.
-///////////////////////////////////////////////////////////////////////////////
-OVERRIDE_CONST(gridconnect_bridge_max_incoming_packets, 10);
+OVERRIDE_CONST(gridconnect_bridge_max_outgoing_packets, 10);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Increase the listener backlog to improve concurrency.
 ///////////////////////////////////////////////////////////////////////////////
-OVERRIDE_CONST(socket_listener_backlog, 3);
+OVERRIDE_CONST(socket_listener_backlog, 2);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Increase the websocket max frame size to allow space for WiFi scan results
@@ -100,6 +94,12 @@ OVERRIDE_CONST(socket_listener_backlog, 3);
 // TODO: move WS processing out of the callback so this is not needed.
 ///////////////////////////////////////////////////////////////////////////////
 OVERRIDE_CONST(httpd_websocket_max_frame_size, 1024);
+
+///////////////////////////////////////////////////////////////////////////////
+// Increase the CAN RX frame buffer size to reduce overruns when the hub has
+// high load (ie: large datagram transport).
+///////////////////////////////////////////////////////////////////////////////
+OVERRIDE_CONST(can_rx_buffer_size, 64);
 
 /// Number of seconds to hold the Factory Reset button to force clear all
 /// stored configuration data.
