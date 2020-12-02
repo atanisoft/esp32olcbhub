@@ -51,8 +51,9 @@
 #include <freertos_drivers/esp32/Esp32Twai.hxx>
 #include <openlcb/SimpleStack.hxx>
 #include <utils/AutoSyncFileFlow.hxx>
-#include <utils/format_utils.hxx>
 #include <utils/constants.hxx>
+#include <utils/format_utils.hxx>
+#include <utils/Uninitialized.hxx>
 
 static esp32olcbhub::ConfigDef cfg(0);
 
@@ -97,22 +98,28 @@ namespace openlcb
     };
 }
 
-// TODO: shift to SimpleStackBase to allow shift to TCP/IP native stack rather
-// than GridConnect TCP/IP stack.
-std::unique_ptr<openlcb::SimpleCanStack> stack;
-std::unique_ptr<Esp32WiFiManager> wifi_manager;
-
-#if CONFIG_TWAI_ENABLED
-Esp32Twai twai("/dev/twai", CONFIG_TWAI_RX_PIN, CONFIG_TWAI_TX_PIN);
-
-static void twai_init_task(void *param)
+extern "C" void enter_bootloader()
 {
-  auto stack = static_cast<openlcb::SimpleCanStack *>(param);
-  twai.hw_init();
-  stack->add_can_port_select("/dev/twai/twai0");
-  vTaskDelete(nullptr);
+    node_config_t config;
+    if (load_config(&config) != ESP_OK)
+    {
+        default_config(&config);
+    }
+    config.bootloader_req = true;
+    save_config(&config);
+    LOG(INFO, "[Bootloader] Rebooting into bootloader");
+    reboot();
 }
-#endif // CONFIG_TWAI_ENABLED
+
+uninitialized<openlcb::SimpleCanStack> stack;
+uninitialized<Esp32WiFiManager> wifi_manager;
+uninitialized<AutoSyncFileFlow> config_sync;
+uninitialized<FactoryResetHelper> factory_reset_helper;
+uninitialized<esp32olcbhub::DelayRebootHelper> delayed_reboot;
+uninitialized<esp32olcbhub::NodeRebootHelper> node_reboot_helper;
+uninitialized<esp32olcbhub::HealthMonitor> health_mon;
+
+Esp32Twai twai("/dev/twai", CONFIG_TWAI_RX_PIN, CONFIG_TWAI_TX_PIN);
 
 #if CONFIG_SNTP
 static bool sntp_callback_called_previously = false;
@@ -143,16 +150,18 @@ static void sntp_received(struct timeval *tv)
 }
 #endif // CONFIG_SNTP
 
-std::unique_ptr<AutoSyncFileFlow> config_sync;
-std::unique_ptr<FactoryResetHelper> factory_reset_helper;
-std::unique_ptr<esp32olcbhub::DelayRebootHelper> delayed_reboot;
-std::unique_ptr<esp32olcbhub::NodeRebootHelper> node_reboot_helper;
-std::unique_ptr<esp32olcbhub::HealthMonitor> health_mon;
-
-openlcb::SimpleCanStack *prepare_openlcb_stack(node_config_t *config, bool reset_events)
+void start_openlcb_stack(node_config_t *config, bool reset_events
+                       , bool brownout_detected)
 {
+    LOG(INFO, "[SNIP] version:%d, manufacturer:%s, model:%s, hw-v:%s, sw-v:%s"
+      , openlcb::SNIP_STATIC_DATA.version
+      , openlcb::SNIP_STATIC_DATA.manufacturer_name
+      , openlcb::SNIP_STATIC_DATA.model_name
+      , openlcb::SNIP_STATIC_DATA.hardware_version
+      , openlcb::SNIP_STATIC_DATA.software_version);
+
     // Create the LCC stack.
-    stack.reset(new openlcb::SimpleCanStack(config->node_id));
+    stack.emplace(config->node_id);
 
     stack->set_tx_activity_led(LED_ACTIVITY_Pin::instance());
 
@@ -166,30 +175,24 @@ openlcb::SimpleCanStack *prepare_openlcb_stack(node_config_t *config, bool reset
             reset_wifi_config_to_softap(config);
         }
 
-        wifi_manager.reset(
-            new Esp32WiFiManager(config->wifi_mode != WIFI_MODE_AP ? config->sta_ssid : config->ap_ssid
-                               , config->wifi_mode != WIFI_MODE_AP ? config->sta_pass : config->ap_pass
-                               , stack.get()
-                               , cfg.seg().wifi()
-                               , config->hostname_prefix
-                               , config->wifi_mode
-                               , nullptr // TODO add config.sta_ip
-                               , ip_addr_any
-                               , 1
-                               , config->ap_auth
-                               , config->ap_ssid
-                               , config->ap_pass));
+        wifi_manager.emplace(config->wifi_mode != WIFI_MODE_AP ? config->sta_ssid : config->ap_ssid
+                           , config->wifi_mode != WIFI_MODE_AP ? config->sta_pass : config->ap_pass
+                           , stack.get_mutable(), cfg.seg().wifi()
+                           , config->hostname_prefix, config->wifi_mode
+                           , nullptr // TODO add config.sta_ip
+                           , ip_addr_any, config->ap_channel, config->ap_auth
+                           , config->ap_ssid, config->ap_pass);
 
         wifi_manager->wait_for_ssid_connect(config->sta_wait_for_connect);
         wifi_manager->register_network_up_callback(
         [](esp_interface_t iface, uint32_t ip)
         {
-            LED_WIFI_Pin::set(true);
+            LED_WIFI_Pin::instance()->set();
         });
         wifi_manager->register_network_down_callback(
         [](esp_interface_t iface)
         {
-            LED_WIFI_Pin::set(false);
+            LED_WIFI_Pin::instance()->clr();
         });
 #ifdef CONFIG_TIMEZONE
         LOG(INFO, "[TimeZone] %s", CONFIG_TIMEZONE);
@@ -213,26 +216,17 @@ openlcb::SimpleCanStack *prepare_openlcb_stack(node_config_t *config, bool reset
     stack->print_all_packets();
 #endif
 
-#if CONFIG_TWAI_ENABLED
-    // Initialize the TWAI driver from core 1 to ensure the TWAI driver is
-    // tied to the core that the OpenMRN stack is *NOT* running on.
-    xTaskCreatePinnedToCore(twai_init_task, "twai-init", 2048, stack.get()
-                            , config_arduino_openmrn_task_priority(), nullptr
-                            , APP_CPU_NUM);
-#endif // CONFIG_TWAI_ENABLED
-
     // Initialize the factory reset helper.
-    factory_reset_helper.reset(new FactoryResetHelper(config->node_id, cfg));
+    factory_reset_helper.emplace(cfg, config->node_id);
 
     // hook for delayed rebooter.
-    delayed_reboot.reset(new esp32olcbhub::DelayRebootHelper(stack->service()));
-
-    health_mon.reset(new esp32olcbhub::HealthMonitor(stack->service()));
+    delayed_reboot.emplace(stack->service());
+    health_mon.emplace(stack.get_mutable());
 
     // Create / update CDI, if the CDI is out of date a factory reset will be
     // forced.
     if (CDIHelper::create_config_descriptor_xml(cfg, openlcb::CDI_FILE
-                                              , stack.get()))
+                                              , stack.get_mutable()))
     {
         LOG(WARNING, "[CDI] Forcing factory reset due to CDI update");
         unlink(openlcb::CONFIG_FILENAME);
@@ -257,21 +251,39 @@ openlcb::SimpleCanStack *prepare_openlcb_stack(node_config_t *config, bool reset
     // fflush or file close.
     // NOTE: This can be removed if/when OpenMRN issues an fsync() as part of
     // processing MemoryConfigDefs::COMMAND_UPDATE_COMPLETE.
-    config_sync.reset(
-        new AutoSyncFileFlow(stack->service(), config_fd
-                           , SEC_TO_USEC(CONFIG_OLCB_CONFIG_SYNC_SEC)));
+    config_sync.emplace(stack->service(), config_fd
+                      , SEC_TO_USEC(CONFIG_OLCB_CONFIG_SYNC_SEC));
 
     // Configure the node reboot helper to allow safe shutdown of file handles
     // and file systems etc.
-    node_reboot_helper.reset(
-        new esp32olcbhub::NodeRebootHelper(stack.get(), config_fd
-                                         , config_sync.get()));
+    node_reboot_helper.emplace(stack.get_mutable(), config_fd
+                             , config_sync.get_mutable());
 
     // Initialize the webserver after the config file has been created/opened.
     if (config->wifi_mode > WIFI_MODE_NULL && config->wifi_mode < WIFI_MODE_MAX)
     {
-        init_webserver(config, config_fd, stack.get());
+        init_webserver(config, config_fd, stack.get_mutable());
     }
 
-    return stack.get();
+    stack->executor()->add(new CallbackExecutable([]
+    {
+        // Initialize the TWAI driver
+        twai.hw_init();
+        stack->add_can_port_select("/dev/twai/twai0");
+    }));
+
+    if (brownout_detected)
+    {
+        // Queue the brownout event to be sent.
+        stack->executor()->add(new CallbackExecutable([]()
+        {
+            LOG_ERROR("[Brownout] Detected a brownout reset, sending event");
+            stack->send_event(openlcb::Defs::NODE_POWER_BROWNOUT_EVENT);
+        }));
+    }
+
+    // Start the stack in the background using it's own task.
+    stack->start_executor_thread("OpenMRN"
+                               , config_arduino_openmrn_task_priority()
+                               , config_arduino_openmrn_stack_size());
 }

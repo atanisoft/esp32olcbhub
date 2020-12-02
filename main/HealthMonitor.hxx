@@ -35,8 +35,10 @@
 #ifndef HEARTBEAT_LED_H_
 #define HEARTBEAT_LED_H_
 
+#include <esp_log.h>
 #include <executor/Service.hxx>
 #include <executor/StateFlow.hxx>
+#include <openlcb/SimpleStack.hxx>
 #include <utils/logging.h>
 
 #include "hardware.hxx"
@@ -52,7 +54,8 @@ public:
     /// Constructor.
     ///
     /// @param service is the @ref Service to attach this flow to.
-    HealthMonitor(Service *service) : StateFlowBase(service)
+    HealthMonitor(openlcb::SimpleCanStackBase *stack)
+                : StateFlowBase(stack->service()), stack_(stack)
     {
         start_flow(STATE(update));
     }
@@ -65,6 +68,9 @@ public:
         timer_.ensure_triggered();
     }
 private:
+    /// @ref SimpleCanStackBase that is currently in use.
+    openlcb::SimpleCanStackBase *stack_;
+
     /// @ref StateFlowTimer used for periodic wakeup.
     StateFlowTimer timer_{this};
 
@@ -82,18 +88,26 @@ private:
         {
             return exit();
         }
-        LOG(INFO, "[HealthMon %02d:%02d:%02d] "
-                    "Free heap: %.2fkB (max block size: %.2fkB), "
-                    "Free PSRAM: %.2fkB (max block size: %.2fkB), "
-                    "mainBufferPool: %.2fkB"
-            , (uint32_t)(USEC_TO_SEC(esp_timer_get_time()) / 3600)
-            , (uint32_t)(USEC_TO_SEC(esp_timer_get_time()) % 3600) / 60
-            , (uint32_t)(USEC_TO_SEC(esp_timer_get_time()) % 60 )
-            , heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024.0f
-            , heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024.0f
-            , heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024.0f
-            , heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) / 1024.0f
-            , mainBufferPool->total_size() / 1024.0f);
+
+        UBaseType_t taskCount = uxTaskGetNumberOfTasks();
+        unsigned hub_clients = 0;
+        if (stack_->get_tcp_hub_server())
+        {
+            hub_clients = stack_->get_tcp_hub_server()->get_num_clients();
+        }
+        LOG(INFO, "%s: Free heap: %.2fkB (max block size: %.2fkB), "
+#if CONFIG_SPIRAM_SUPPORT
+                  "Free PSRAM: %.2fkB (max block size: %.2fkB), "
+#endif // CONFIG_SPIRAM_SUPPORT
+                  "mainBufferPool: %.2fkB, Hub clients: %u, FreeRTOS tasks: %d"
+          , esp_log_system_timestamp()
+          , heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024.0f
+          , heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024.0f
+#if CONFIG_SPIRAM_SUPPORT
+          , heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024.0f
+          , heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) / 1024.0f
+#endif // CONFIG_SPIRAM_SUPPORT
+          , mainBufferPool->total_size() / 1024.0f, hub_clients, taskCount);
         return sleep_and_call(&timer_, reportInterval_, STATE(update));
     }
 };

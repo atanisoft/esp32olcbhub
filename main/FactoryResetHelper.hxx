@@ -48,8 +48,8 @@
 class FactoryResetHelper : public DefaultConfigUpdateListener
 {
 public:
-    FactoryResetHelper(uint64_t node_id, const esp32olcbhub::ConfigDef &cfg)
-        : nodeId_(node_id), cfg_(cfg)
+    FactoryResetHelper(const esp32olcbhub::ConfigDef &cfg, uint64_t node_id)
+        : cfg_(cfg), nodeId_(node_id)
     {
 
     }
@@ -73,8 +73,8 @@ public:
         cfg_.userinfo().description().write(fd, node_id.c_str());
     }
 private:
-    uint64_t nodeId_;
     const esp32olcbhub::ConfigDef &cfg_;
+    uint64_t nodeId_;
 
     template<const unsigned num, const char separator>
     void inject_seperator(std::string & input)

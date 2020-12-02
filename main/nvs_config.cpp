@@ -143,6 +143,10 @@ esp_err_t save_config(node_config_t *config)
 #define WIFI_HOSTNAME_PREFIX "esp32olcbhub_"
 #endif
 
+#ifndef CONFIG_WIFI_SOFTAP_CHANNEL
+#define CONFIG_WIFI_SOFTAP_CHANNEL 1
+#endif
+
 esp_err_t default_config(node_config_t *config)
 {
     LOG(INFO, "[NVS] Initializing default configuration");
@@ -152,6 +156,7 @@ esp_err_t default_config(node_config_t *config)
     strcpy(config->sta_ssid, CONFIG_WIFI_STATION_SSID);
     strcpy(config->sta_pass, CONFIG_WIFI_STATION_PASSWORD);
     config->sta_wait_for_connect = CONFIG_WIFI_RESTART_ON_SSID_CONNECT_FAILURE;
+    config->ap_channel = CONFIG_WIFI_SOFTAP_CHANNEL;
     strcpy(config->ap_ssid, CONFIG_WIFI_SOFTAP_SSID);
     strcpy(config->ap_pass, CONFIG_WIFI_SOFTAP_PASSWORD);
     strcpy(config->hostname_prefix, CONFIG_WIFI_HOSTNAME_PREFIX);

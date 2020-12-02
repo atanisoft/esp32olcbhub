@@ -109,7 +109,10 @@ static constexpr int8_t FACTORY_RESET_HOLD_TIME = 10;
 /// all Event IDs. NOTE: This will *NOT* clear WiFi configuration data.
 static constexpr int8_t FACTORY_RESET_EVENTS_HOLD_TIME = 5;
 
-openlcb::SimpleCanStack *prepare_openlcb_stack(node_config_t *config, bool reset_events);
+void start_openlcb_stack(node_config_t *config, bool reset_events
+                       , bool brownout_detected);
+
+void start_bootloader_stack(uint64_t id);
 
 extern "C"
 {
@@ -186,6 +189,7 @@ void app_main()
     // load non-CDI based config from NVS.
     bool cleanup_config_tree = false;
     bool reset_events = false;
+    bool bootloader = false;
     node_config_t config;
     if (load_config(&config) != ESP_OK)
     {
@@ -193,8 +197,20 @@ void app_main()
         cleanup_config_tree = true;
     }
 
-    // Check for factory reset button being held on startup
-    if (FACTORY_RESET_Pin::instance()->is_clr())
+    // If the flag was set to enter the bootloader on startup, reset it now
+    // so we boot into normal mode on next startup.
+    if (config.bootloader_req)
+    {
+        config.bootloader_req = false;
+        save_config(&config);
+        bootloader = true;
+    }
+
+    // Check for factory reset button being held to GND and the USER button
+    // not being held to GND. If this is detected the factory reset process
+    // will be started.
+    if (FACTORY_RESET_Pin::instance()->is_clr() && 
+        USER_BUTTON_Pin::instance()->is_set())
     {
         LED_WIFI_Pin::set(true);
         LED_ACTIVITY_Pin::set(false);
@@ -243,6 +259,23 @@ void app_main()
         LED_WIFI_Pin::set(false);
         LED_ACTIVITY_Pin::set(false);
     }
+    else if (FACTORY_RESET_Pin::instance()->is_clr() && 
+             USER_BUTTON_Pin::instance()->is_clr())
+    {
+        // If both the factory reset and user button are held to GND it is a
+        // request to enter the bootloader mode.
+        bootloader = true;
+
+        // give a visual indicator that the bootloader request has been ACK'd
+        // turn on both WiFi and Activity LEDs, wait ~1sec, turn off WiFi LED,
+        // wait ~1sec, turn off Activity LED.
+        LED_WIFI_Pin::set(true);
+        LED_ACTIVITY_Pin::set(true);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        LED_WIFI_Pin::set(false);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        LED_ACTIVITY_Pin::set(false);
+    }
 
     // Check for and reset factory reset flag.
     if (config.force_reset)
@@ -253,38 +286,23 @@ void app_main()
     }
 
     dump_config(&config);
-    mount_fs(cleanup_config_tree);
 
-    LOG(INFO, "[SNIP] version:%d, manufacturer:%s, model:%s, hw-v:%s, sw-v:%s"
-      , openlcb::SNIP_STATIC_DATA.version
-      , openlcb::SNIP_STATIC_DATA.manufacturer_name
-      , openlcb::SNIP_STATIC_DATA.model_name
-      , openlcb::SNIP_STATIC_DATA.hardware_version
-      , openlcb::SNIP_STATIC_DATA.software_version);
-
-    auto *stack = prepare_openlcb_stack(&config, reset_events);
-
-    // Check if the reset reason was due to brownout.
-    if (reset_reason == RTCWDT_BROWN_OUT_RESET)
+    // If the bootloader has been requested and TWAI is enabled we can start
+    // the bootloader stack. Otherwise start the full stack.
+    if (bootloader && !config.disable_twai)
     {
-        // Queue the brownout event to be sent.
-        stack->executor()->add(new CallbackExecutable([&]()
-        {
-            LOG_ERROR("[Brownout] Detected a brownout reset, sending event");
-            stack->send_event(openlcb::Defs::NODE_POWER_BROWNOUT_EVENT);
-        }));
+        start_bootloader_stack(config.node_id);
+    }
+    else
+    {
+        mount_fs(cleanup_config_tree);
+        start_openlcb_stack(&config, reset_events
+                        , reset_reason == RTCWDT_BROWN_OUT_RESET);
     }
 
-    // disable the task WDT before passing ownership of the task to the stack.
-    LOG(INFO, "[WDT] Disabling WDT for app_main");
-    esp_task_wdt_delete(NULL);
-
-    // increase main task priority to ensure it is not competing with other
-    // tasks.
-    vTaskPrioritySet(nullptr, config_arduino_openmrn_task_priority());
-
-    LOG(INFO, "[LCC] Starting LCC stack");
-    stack->loop_executor();
+    // At this point the OpenMRN stack is running in it's own task and we can
+    // safely exit from this one. We do not need to cleanup as that will be
+    // handled automatically by ESP-IDF.
 }
 
 } // extern "C"
