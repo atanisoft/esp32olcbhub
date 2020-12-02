@@ -54,7 +54,6 @@ static std::unique_ptr<openlcb::MemoryConfigClient> memory_client;
 static MDNS mdns;
 static node_config_t *node_cfg;
 static openlcb::SimpleStackBase *node_stack;
-static Executor<1> http_executor{NO_THREAD()};
 
 /// Statically embedded index.html start location.
 extern const uint8_t indexHtmlGz[] asm("_binary_index_html_gz_start");
@@ -150,14 +149,6 @@ uint64_t string_to_uint64(std::string value)
     value.erase(std::remove(value.begin(), value.end(), '.'), value.end());
     // convert the string to a uint64_t value
     return std::stoull(value, nullptr, 16);
-}
-
-static void http_exec_task(void *param)
-{
-    LOG(INFO, "[Httpd] Executor starting...");
-    http_executor.thread_body();
-    LOG(INFO, "[Httpd] Executor stopped...");
-    vTaskDelete(nullptr);
 }
 
 using openlcb::MemoryConfigClientRequest;
@@ -299,14 +290,8 @@ void init_webserver(node_config_t *config, int fd, openlcb::SimpleStackBase *sta
     node_stack = stack;
     memory_client.reset(new openlcb::MemoryConfigClient(node_stack->node(), node_stack->memory_config_handler()));
 
-    LOG(INFO, "[Httpd] Initializing Executor");
-    xTaskCreatePinnedToCore(http_exec_task, "httpd"
-                          , http::config_httpd_server_stack_size(), nullptr
-                          , config_arduino_openmrn_task_priority(), nullptr
-                          , APP_CPU_NUM);
-
     LOG(INFO, "[Httpd] Initializing webserver");
-    http_server.reset(new http::Httpd(&http_executor, &mdns));
+    http_server.reset(new http::Httpd(&mdns));
     if (config->wifi_mode == WIFI_MODE_AP || config->wifi_mode == WIFI_MODE_APSTA)
     {
         const esp_app_desc_t *app_data = esp_ota_get_app_description();
@@ -520,8 +505,4 @@ void shutdown_webserver()
 {
     LOG(INFO, "[Httpd] Shutting down webserver");
     http_server.reset(nullptr);
-
-    HASSERT(os_thread_self() != http_executor.thread_handle());
-    LOG(INFO, "[Httpd] Shutting down webserver executor");
-    http_executor.shutdown();
 }
