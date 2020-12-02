@@ -115,7 +115,3 @@ endif()
 if (NOT CONFIG_LWIP_SO_RCVBUF)
     message(FATAL_ERROR "LwIP SO_RCVBUF is a required option in menuconfig.")
 endif()
-
-if (CONFIG_ESP_MAIN_TASK_STACK_SIZE LESS 8192)
-    message(FATAL_ERROR "Main task stack size must be at least 8192 bytes.")
-endif()
