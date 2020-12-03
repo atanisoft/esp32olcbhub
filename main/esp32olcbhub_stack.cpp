@@ -119,7 +119,9 @@ uninitialized<esp32olcbhub::DelayRebootHelper> delayed_reboot;
 uninitialized<esp32olcbhub::NodeRebootHelper> node_reboot_helper;
 uninitialized<esp32olcbhub::HealthMonitor> health_mon;
 
+#if CONFIG_OLCB_ENABLE_TWAI
 Esp32Twai twai("/dev/twai", CONFIG_TWAI_RX_PIN, CONFIG_TWAI_TX_PIN);
+#endif // CONFIG_OLCB_ENABLE_TWAI
 
 #if CONFIG_SNTP
 static bool sntp_callback_called_previously = false;
@@ -265,12 +267,14 @@ void start_openlcb_stack(node_config_t *config, bool reset_events
         init_webserver(config, config_fd, stack.get_mutable());
     }
 
+#if CONFIG_OLCB_ENABLE_TWAI
     stack->executor()->add(new CallbackExecutable([]
     {
         // Initialize the TWAI driver
         twai.hw_init();
         stack->add_can_port_select("/dev/twai/twai0");
     }));
+#endif // CONFIG_OLCB_ENABLE_TWAI
 
     if (brownout_detected)
     {
