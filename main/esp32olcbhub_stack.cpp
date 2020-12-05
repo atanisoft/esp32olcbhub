@@ -48,7 +48,7 @@
 #include <esp_task.h>
 #include <freertos_includes.h>
 #include <freertos_drivers/esp32/Esp32WiFiManager.hxx>
-#include <freertos_drivers/esp32/Esp32Twai.hxx>
+#include <freertos_drivers/esp32/Esp32HardwareTwai.hxx>
 #include <openlcb/SimpleStack.hxx>
 #include <utils/AutoSyncFileFlow.hxx>
 #include <utils/constants.hxx>
@@ -120,7 +120,7 @@ uninitialized<esp32olcbhub::NodeRebootHelper> node_reboot_helper;
 uninitialized<esp32olcbhub::HealthMonitor> health_mon;
 
 #if CONFIG_OLCB_ENABLE_TWAI
-Esp32Twai twai("/dev/twai", CONFIG_TWAI_RX_PIN, CONFIG_TWAI_TX_PIN);
+Esp32HardwareTwai twai(CONFIG_TWAI_RX_PIN, CONFIG_TWAI_TX_PIN);
 #endif // CONFIG_OLCB_ENABLE_TWAI
 
 #if CONFIG_SNTP
@@ -272,7 +272,7 @@ void start_openlcb_stack(node_config_t *config, bool reset_events
     {
         // Initialize the TWAI driver
         twai.hw_init();
-        stack->add_can_port_select("/dev/twai/twai0");
+        stack->add_can_port_async("/dev/twai/twai0");
     }));
 #endif // CONFIG_OLCB_ENABLE_TWAI
 
