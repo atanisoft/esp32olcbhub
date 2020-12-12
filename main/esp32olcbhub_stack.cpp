@@ -331,6 +331,14 @@ Esp32HardwareTwai twai(TWAI_RX_PIN, TWAI_TX_PIN);
 #define CONFIG_WIFI_SOFTAP_CHANNEL 1
 #endif
 
+#ifndef CONFIG_SNTP_SERVER
+#define CONFIG_SNTP_SERVER "pool.ntp.org"
+#endif
+
+#ifndef CONFIG_TIMEZONE
+#define CONFIG_TIMEZONE "UTC0"
+#endif
+
 void start_openlcb_stack(node_config_t *config, bool reset_events
                        , bool brownout_detected)
 {
