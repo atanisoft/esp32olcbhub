@@ -2,7 +2,7 @@ menu "Pin Configuration"
     config LED_WIFI
         int "WiFi LED"
         range 4 33
-        default 22
+        default 23
         help
             This pin can be connected to an LED which will be ON when the WiFi
             has connected to an SSID or the SoftAP is active.
@@ -11,7 +11,7 @@ menu "Pin Configuration"
     config LED_STATUS
         int "Status LED"
         range 4 33
-        default 23
+        default 22
         help
             This pin can be connected to an LED which will be used as a status
             indicator.
@@ -74,10 +74,6 @@ menu "OpenLCB Configuration"
             https://registry.openlcb.org/requestuniqueidrange
             The default node identifier is part of a reserved range of
             identifier values.
-
-    config OLCB_CONFIG_SYNC_SEC
-        int
-        default 5
 
     config OLCB_PRINT_ALL_PACKETS
         bool "Print all GridConnect packets"

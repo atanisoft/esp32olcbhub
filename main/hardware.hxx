@@ -59,4 +59,18 @@ GPIO_PIN(USER_BUTTON, GpioInputPU, CONFIG_USER_BUTTON);
 typedef GpioInitializer<LED_WIFI_Pin, LED_ACTIVITY_Pin,
                         FACTORY_RESET_Pin, USER_BUTTON_Pin> GpioInit;
 
+#ifndef CONFIG_TWAI_RX_PIN
+#define CONFIG_TWAI_RX_PIN GPIO_NUM_4
+#endif
+
+#ifndef CONFIG_TWAI_TX_PIN
+#define CONFIG_TWAI_TX_PIN GPIO_NUM_5
+#endif
+
+/// GPIO Pin connected to the TWAI (CAN) Transceiver RX pin.
+static constexpr gpio_num_t TWAI_RX_PIN = (gpio_num_t)CONFIG_TWAI_RX_PIN;
+
+/// GPIO Pin connected to the TWAI (CAN) Transceiver TX pin.
+static constexpr gpio_num_t TWAI_TX_PIN = (gpio_num_t)CONFIG_TWAI_TX_PIN;
+
 #endif // HARDWARE_HXX_

@@ -218,8 +218,8 @@ void app_main()
     if (FACTORY_RESET_Pin::instance()->is_clr() && 
         USER_BUTTON_Pin::instance()->is_set())
     {
-        LED_WIFI_Pin::set(true);
-        LED_ACTIVITY_Pin::set(false);
+        LED_WIFI_Pin::instance()->set();
+        LED_ACTIVITY_Pin::instance()->clr();
         // Count down from the overall factory reset time.
         int8_t hold_time = FACTORY_RESET_HOLD_TIME;
         for (; hold_time > 0 && FACTORY_RESET_Pin::instance()->is_clr();
@@ -275,12 +275,12 @@ void app_main()
         // give a visual indicator that the bootloader request has been ACK'd
         // turn on both WiFi and Activity LEDs, wait ~1sec, turn off WiFi LED,
         // wait ~1sec, turn off Activity LED.
-        LED_WIFI_Pin::set(true);
-        LED_ACTIVITY_Pin::set(true);
+        LED_WIFI_Pin::instance()->set();
+        LED_ACTIVITY_Pin::instance()->set();
         vTaskDelay(pdMS_TO_TICKS(1000));
-        LED_WIFI_Pin::set(false);
+        LED_WIFI_Pin::instance()->clr();
         vTaskDelay(pdMS_TO_TICKS(1000));
-        LED_ACTIVITY_Pin::set(false);
+        LED_ACTIVITY_Pin::instance()->clr();
     }
 
     // Check for and reset factory reset flag.

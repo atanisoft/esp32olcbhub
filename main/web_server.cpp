@@ -38,11 +38,10 @@
 #include <cJSON.h>
 #include <esp_log.h>
 #include <esp_ota_ops.h>
-#include <esp_wifi.h>
-#include <freertos_drivers/esp32/Esp32WiFiManager.hxx>
 #include <Httpd.h>
 #include <HttpStringUtils.h>
 #include <openlcb/MemoryConfigClient.hxx>
+#include <openlcb/SimpleStack.hxx>
 #include <os/MDNS.hxx>
 #include <utils/constants.hxx>
 #include <utils/FdUtils.hxx>
@@ -52,7 +51,6 @@
 static std::unique_ptr<http::Httpd> http_server;
 static std::unique_ptr<openlcb::MemoryConfigClient> memory_client;
 static MDNS mdns;
-static node_config_t *node_cfg;
 static openlcb::SimpleStackBase *node_stack;
 
 /// Statically embedded index.html start location.
@@ -284,20 +282,22 @@ private:
     }
 };
 
-void init_webserver(node_config_t *config, int fd, openlcb::SimpleStackBase *stack)
+namespace openlcb
 {
-    node_cfg = config;
+extern const char CDI_DATA[];
+extern const size_t CDI_SIZE;
+} // namespace openlcb
+
+void init_webserver(int fd, openlcb::SimpleStackBase *stack)
+{
     node_stack = stack;
     memory_client.reset(new openlcb::MemoryConfigClient(node_stack->node(), node_stack->memory_config_handler()));
 
     LOG(INFO, "[Httpd] Initializing webserver");
     http_server.reset(new http::Httpd(&mdns));
-    if (config->wifi_mode == WIFI_MODE_AP || config->wifi_mode == WIFI_MODE_APSTA)
-    {
-        const esp_app_desc_t *app_data = esp_ota_get_app_description();
-        http_server->captive_portal(
-            StringPrintf(CAPTIVE_PORTAL_HTML, app_data->project_name, app_data->version, app_data->project_name, app_data->project_name));
-    }
+    const esp_app_desc_t *app_data = esp_ota_get_app_description();
+    http_server->captive_portal(
+        StringPrintf(CAPTIVE_PORTAL_HTML, app_data->project_name, app_data->version, app_data->project_name, app_data->project_name));
     http_server->redirect_uri("/", "/index.html");
     http_server->static_uri("/index.html", indexHtmlGz, indexHtmlGz_size
                           , http::MIME_TYPE_TEXT_HTML
@@ -312,6 +312,8 @@ void init_webserver(node_config_t *config, int fd, openlcb::SimpleStackBase *sta
     http_server->static_uri("/milligram.min.css", normalizeMinCssGz
                           , normalizeMinCssGz_size, http::MIME_TYPE_TEXT_CSS
                           , http::HTTP_ENCODING_GZIP);
+    http_server->static_uri("/cdi.xml", (const uint8_t *)openlcb::CDI_DATA
+                          , openlcb::CDI_SIZE, http::MIME_TYPE_TEXT_XML);
     http_server->websocket_uri("/ws",
     [](http::WebSocketFlow *socket, http::WebSocketEvent event, uint8_t *data, size_t len)
     {
@@ -334,13 +336,7 @@ void init_webserver(node_config_t *config, int fd, openlcb::SimpleStackBase *sta
                     StringPrintf(R"!^!({"resp_type":"info","build":"%s","timestamp":"%s %s","ota":"%s","snip_name":"%s","snip_hw":"%s","snip_sw":"%s","node_id":"%s"})!^!",
                                  app_data->version, app_data->date, app_data->time, partition->label,
                                  openlcb::SNIP_STATIC_DATA.model_name, openlcb::SNIP_STATIC_DATA.hardware_version,
-                                 openlcb::SNIP_STATIC_DATA.software_version, uint64_to_string_hex(node_cfg->node_id).c_str());
-            }
-            else if (!strcmp(req_type->valuestring, "wifi"))
-            {
-                response =
-                    StringPrintf(R"!^!({"resp_type":"wifi","mode":%d,"sta_ssid":"%s","ap_ssid":"%s"})!^!"
-                               , node_cfg->wifi_mode, node_cfg->sta_ssid, node_cfg->ap_ssid);
+                                 openlcb::SNIP_STATIC_DATA.software_version, uint64_to_string_hex(node_stack->node()->node_id()).c_str());
             }
             else if (!strcmp(req_type->valuestring, "cdi-get"))
             {
@@ -429,35 +425,6 @@ void init_webserver(node_config_t *config, int fd, openlcb::SimpleStackBase *sta
                     Singleton<esp32olcbhub::DelayRebootHelper>::instance()->start();
                     response = R"!^!({"resp_type":"factory-reset","reboot":true})!^!";
                 }
-            }
-            else if (!strcmp(req_type->valuestring, "wifi-scan"))
-            {
-                auto wifi = Singleton<openmrn_arduino::Esp32WiFiManager>::instance();
-                response = R"!^!({"resp_type":"wifi-scan"})!^!";
-                SyncNotifiable n;
-                wifi->start_ssid_scan(&n);
-                n.wait_for_notification();
-                size_t num_found = wifi->get_ssid_scan_result_count();
-                vector<string> seen_ssids;
-                for (int i = 0; i < num_found; i++)
-                {
-                    auto entry = wifi->get_ssid_scan_result(i);
-                    if (std::find_if(seen_ssids.begin(), seen_ssids.end(),
-                        [entry](string &s) {
-                            return s == (char *)entry.ssid;
-                        }) != seen_ssids.end())
-                    {
-                        // filter duplicate SSIDs
-                        continue;
-                    }
-                    seen_ssids.push_back((char *)entry.ssid);
-                    string part = StringPrintf(
-                        R"!^!({"resp_type":"wifi-entry","auth":%d,"rssi":%d,"ssid":"%s"})!^!",
-                        entry.authmode, entry.rssi, http::url_encode((char *)entry.ssid).c_str());
-                    part += "\n";
-                    socket->send_text(part);
-                }
-                wifi->clear_ssid_scan_results();
             }
             else
             {

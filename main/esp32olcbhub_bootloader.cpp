@@ -98,6 +98,5 @@ void bootloader_led(enum BootloaderLed led, bool value)
 /// @param id is the node identifier to use.
 void start_bootloader_stack(uint64_t id)
 {
-    esp32_bootloader_run(id, (gpio_num_t)CONFIG_TWAI_TX_PIN
-                       , (gpio_num_t)CONFIG_TWAI_RX_PIN, true);
+    esp32_bootloader_run(id, TWAI_TX_PIN, TWAI_RX_PIN, true);
 }

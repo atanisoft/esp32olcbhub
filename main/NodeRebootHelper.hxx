@@ -53,9 +53,8 @@ public:
     /// @param stack is the @ref SimpleCanStack to shutdown.
     /// @param fd is the file handle for the configuration file.
     /// @param sync is the background synchronization task to stop.
-    NodeRebootHelper(openlcb::SimpleCanStack *stack, int fd
-                   , AutoSyncFileFlow *sync)
-                   : stack_(stack), fd_(fd), sync_(sync)
+    NodeRebootHelper(openlcb::SimpleCanStack *stack, int fd)
+                   : stack_(stack), fd_(fd)
     {
     }
 
@@ -66,10 +65,6 @@ public:
         // make sure we are not called from the executor thread otherwise there
         // will be a deadlock
         HASSERT(os_thread_self() != stack_->executor()->thread_handle());
-        LOG(INFO, "[Reboot] Stopping config file sync handler...");
-        SyncNotifiable n;
-        sync_->shutdown(&n);
-        n.wait_for_notification();
         shutdown_webserver();
         LOG(INFO, "[Reboot] Shutting down LCC executor...");
         stack_->executor()->sync_run([&]()
@@ -87,9 +82,6 @@ private:
 
     /// Configuration file descriptor to be closed prior to shutdown.
     int fd_;
-
-    /// @ref AutoSyncFileFlow to be shutdown prior to shutdown.
-    AutoSyncFileFlow *sync_;
 };
 
 } // namespace esp32s2io

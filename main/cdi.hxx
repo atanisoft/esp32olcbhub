@@ -37,7 +37,6 @@
 
 #include <freertos_drivers/esp32/Esp32WiFiConfiguration.hxx>
 #include <openlcb/ConfigRepresentation.hxx>
-#include <openlcb/MemoryConfig.hxx>
 
 namespace esp32olcbhub
 {
@@ -49,8 +48,7 @@ CDI_GROUP(IoBoard, Segment(openlcb::MemoryConfigDefs::SPACE_CONFIG),
 /// Each entry declares the name of the current entry, then the type and then
 /// optional arguments list.
 CDI_GROUP_ENTRY(internal_config, openlcb::InternalConfigData);
-CDI_GROUP_ENTRY(wifi, openmrn_arduino::WiFiConfiguration,
-                Name("WiFi Configuration"));
+CDI_GROUP_ENTRY(wifi, WiFiConfiguration, Name("WiFi Configuration"));
 CDI_GROUP_END();
 
 /// This segment is only needed temporarily until there is program code to set

@@ -36,35 +36,16 @@
 #define NVS_CONFIG_HXX_
 
 #include <esp_err.h>
-#include <esp_wifi.h>
-#include <nvs.h>
-#include <nvs_flash.h>
 #include <stdint.h>
-#include <string>
 
-static constexpr size_t AP_SSID_PASS_LEN = 65;
-static constexpr size_t HOSTNAME_PREFIX_LEN = 21;
 typedef struct
 {
     bool force_reset;
     bool bootloader_req;
     bool disable_twai;
     uint64_t node_id;
-    wifi_mode_t wifi_mode;
-    char hostname_prefix[HOSTNAME_PREFIX_LEN];
-    char sta_ssid[AP_SSID_PASS_LEN];
-    char sta_pass[AP_SSID_PASS_LEN];
-    bool sta_wait_for_connect;
-    uint32_t sta_ip;
-    uint32_t sta_gw;
-    uint32_t sta_nm;
-    wifi_auth_mode_t ap_auth;
-    char ap_ssid[AP_SSID_PASS_LEN];
-    char ap_pass[AP_SSID_PASS_LEN];
-    uint8_t ap_channel;
-    uint8_t reserved[9];
+    uint8_t reserved[21];
 } node_config_t;
-
 
 esp_err_t load_config(node_config_t *config);
 esp_err_t save_config(node_config_t *config);
@@ -72,8 +53,6 @@ esp_err_t default_config(node_config_t *config);
 void nvs_init();
 void dump_config(node_config_t *config);
 bool set_node_id(uint64_t node_id);
-bool reconfigure_wifi(wifi_mode_t, const std::string &ssid, const std::string &password);
 bool force_factory_reset();
-bool reset_wifi_config_to_softap(node_config_t *config);
 
 #endif // NVS_CONFIG_HXX_

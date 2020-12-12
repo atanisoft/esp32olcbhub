@@ -35,14 +35,12 @@
 #ifndef WEB_SERVER_HXX_
 #define WEB_SERVER_HXX_
 
-#include "nvs_config.hxx"
-
 namespace openlcb
 {
     class SimpleStackBase;
 }
 
-void init_webserver(node_config_t *config, int fd, openlcb::SimpleStackBase *stack);
+void init_webserver(int fd, openlcb::SimpleStackBase *stack);
 void shutdown_webserver();
 
 #endif // WEB_SERVER_HXX_
