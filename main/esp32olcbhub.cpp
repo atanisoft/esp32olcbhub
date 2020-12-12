@@ -235,7 +235,7 @@ void app_main()
             else
             {
                 LOG(WARNING, "Factory reset in %d seconds.", hold_time);
-                LED_ACTIVITY_Pin::set(false);
+                LED_ACTIVITY_Pin::instance()->clr();
             }
             usleep(SEC_TO_USEC(1));
             LED_WIFI_Pin::toggle();
@@ -262,8 +262,8 @@ void app_main()
             LOG(WARNING, "Factory reset aborted!");
         }
         // reset LEDs to default state.
-        LED_WIFI_Pin::set(false);
-        LED_ACTIVITY_Pin::set(false);
+        LED_WIFI_Pin::instance()->clr();
+        LED_ACTIVITY_Pin::instance()->clr();
     }
     else if (FACTORY_RESET_Pin::instance()->is_clr() && 
              USER_BUTTON_Pin::instance()->is_clr())

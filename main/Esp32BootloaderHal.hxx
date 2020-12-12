@@ -90,7 +90,6 @@ static constexpr BaseType_t MAX_TWAI_WAIT = pdMS_TO_TICKS(250);
 static bool bootloader_twai_initialized = false;
 
 #if __has_include(<driver/twai.h>)
-#include <driver/twai.h>
 /// TWAI driver timing configuration, 125kbps.
 twai_timing_config_t t_config = TWAI_TIMING_CONFIG_125KBITS();
 
@@ -104,7 +103,6 @@ twai_general_config_t g_config =
     TWAI_GENERAL_CONFIG_DEFAULT(TWAI_IO_UNUSED, TWAI_IO_UNUSED,
                                 TWAI_MODE_NORMAL);
 #else
-#include <driver/can.h>
 /// CAN driver timing configuration, 125kbps.
 can_timing_config_t t_config = CAN_TIMING_CONFIG_125KBITS();
 

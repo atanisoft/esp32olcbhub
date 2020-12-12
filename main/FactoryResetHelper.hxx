@@ -60,7 +60,6 @@ public:
         // nothing to do here as we do not load config
         AutoNotify n(done);
         LOG(VERBOSE, "[CFG] apply_configuration(%d, %d)", fd, initial_load);
-        fsync(fd);
         return UPDATED;
     }
 

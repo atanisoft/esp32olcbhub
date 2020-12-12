@@ -177,3 +177,9 @@ menu "WiFi Configuration"
         default "pool.ntp.org"
         depends on SNTP
 endmenu
+
+menu "Advanced Configuration"
+    config USE_LITTLEFS
+        bool "Use LittleFS"
+        default n
+endmenu
