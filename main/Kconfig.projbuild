@@ -19,22 +19,26 @@ menu "Pin Configuration"
 
     config FACTORY_RESET
         int "Factory Reset"
-        range 4 39
+        range -1 39
         default 15
         help
             This pin can be used to force a factory reset of the configuration.
             Note: Pin 15 is selected as a default since it typically will have
             a pull-up resistor on the module. If you are using the ESP32
-            OpenLCB IO Board PCB this should be set to 39.
+            OpenLCB IO Board PCB this should be set to 39. If you want to
+            disable this functionality set the value to -1 and the pin will
+            always read HIGH.
 
     config USER_BUTTON
         int "User Button"
-        range 4 39
+        range -1 39
         default 36
         help
             This pin can be used in conjunction with the Factory Reset button
             during startup to have the node enter the bootloader mode to allow
-            downloading of firmware via the CAN bus.
+            downloading of firmware via the CAN bus. If you want to disable
+            this functionality set the value to -1 and the pin will always
+            read HIGH.
 
     config TWAI_RX_PIN
         int "TWAI (CAN) RX Pin"
@@ -182,6 +186,22 @@ menu "WiFi Configuration"
 endmenu
 
 menu "Advanced Configuration"
+    config ENABLE_TASK_LIST_REPORTING
+        bool "Enable TaskList reporting"
+        default n
+        select FREERTOS_VTASKLIST_INCLUDE_COREID
+        select FREERTOS_USE_TRACE_FACILITY
+        select FREERTOS_GENERATE_RUN_TIME_STATS
+
+    config TASK_LIST_INTERVAL
+        int "Task list interval (sec)"
+        default 25
+        depends on ENABLE_TASK_LIST_REPORTING
+
+    config HEALTH_INTERVAL
+        int "Health report interval (sec)"
+        default 15
+
     config USE_LITTLEFS
         bool "Use LittleFS"
         default n

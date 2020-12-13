@@ -48,12 +48,22 @@ GPIO_PIN(LED_WIFI, GpioOutputSafeHighInvert, CONFIG_LED_WIFI);
 /// Activity indicator LED. Active (ON) Low.
 GPIO_PIN(LED_ACTIVITY, GpioOutputSafeHighInvert, CONFIG_LED_STATUS);
 
+#if CONFIG_FACTORY_RESET == GPIO_NUM_NC
+/// Fake factory reset pin, it will always read high.
+typedef DummyPinWithReadHigh FACTORY_RESET_Pin;
+#else
 /// Factory Reset Pin, pull LOW (GND) during startup to force reset of events
 /// or all configuration based on how long it is held.
 GPIO_PIN(FACTORY_RESET, GpioInputPU, CONFIG_FACTORY_RESET);
+#endif // CONFIG_FACTORY_RESET == GPIO_NUM_NC
 
+#if CONFIG_USER_BUTTON == GPIO_NUM_NC
+/// Fake user input pin, it will always read high.
+typedef DummyPinWithReadHigh USER_BUTTON_Pin;
+#else
 /// User Button Pin.
 GPIO_PIN(USER_BUTTON, GpioInputPU, CONFIG_USER_BUTTON);
+#endif // CONFIG_USER_BUTTON == GPIO_NUM_NC
 
 /// GPIO Pin initializer.
 typedef GpioInitializer<LED_WIFI_Pin, LED_ACTIVITY_Pin,

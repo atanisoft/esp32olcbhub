@@ -21,7 +21,7 @@ string(SUBSTRING "${project_ver}" 0 20 SNIP_SW_VERSION)
 idf_build_get_property(project_name PROJECT_NAME)
 string(SUBSTRING "${project_name}" 0 40 SNIP_PROJECT_NAME)
 
-set(SNIP_HW_VERSION "1.0.0")
+set(SNIP_HW_VERSION "1.0")
 set(SNIP_PROJECT_PAGE "http://atanisoft.github.io/esp32olcbhub")
 set(CDI_VERSION "0x0101")
 

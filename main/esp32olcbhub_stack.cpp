@@ -35,6 +35,7 @@
 #include "sdkconfig.h"
 #include "cdi.hxx"
 #include "DelayRebootHelper.hxx"
+#include "EventBroadcastHelper.hxx"
 #include "FactoryResetHelper.hxx"
 #include "fs.hxx"
 #include "hardware.hxx"
@@ -43,18 +44,263 @@
 #include "nvs_config.hxx"
 #include "web_server.hxx"
 
-#include <CDIHelper.hxx>
-#include <freertos_drivers/esp32/Esp32WiFiManager.hxx>
 #include <freertos_drivers/esp32/Esp32HardwareTwai.hxx>
+#include <freertos_drivers/esp32/Esp32WiFiManager.hxx>
+#include <openlcb/MemoryConfigClient.hxx>
 #include <openlcb/SimpleStack.hxx>
+#include <openlcb/SimpleNodeInfo.hxx>
 #include <utils/constants.hxx>
 #include <utils/format_utils.hxx>
 #include <utils/Uninitialized.hxx>
 
-static esp32olcbhub::ConfigDef cfg(0);
+extern "C" void enter_bootloader()
+{
+    node_config_t config;
+    if (load_config(&config) != ESP_OK)
+    {
+        default_config(&config);
+    }
+    config.bootloader_req = true;
+    save_config(&config);
+    LOG(INFO, "[Bootloader] Rebooting into bootloader");
+    reboot();
+}
+
+namespace esp32olcbhub
+{
+
+static ConfigDef cfg(0);
+static int config_fd;
+uninitialized<openlcb::SimpleCanStack> stack;
+uninitialized<Esp32WiFiManager> wifi_manager;
+uninitialized<openlcb::MemoryConfigClient> memory_client;
+uninitialized<FactoryResetHelper> factory_reset_helper;
+uninitialized<EventBroadcastHelper> event_helper;
+uninitialized<DelayRebootHelper> delayed_reboot;
+uninitialized<HealthMonitor> health_mon;
+uninitialized<NodeRebootHelper> node_reboot_helper;
+Esp32HardwareTwai twai(TWAI_RX_PIN, TWAI_TX_PIN);
+
+void factory_reset_events()
+{
+    LOG(WARNING, "[CDI] Resetting event IDs");
+    stack->factory_reset_all_events(cfg.seg().internal_config()
+                                  , stack->node()->node_id(), config_fd);
+    fsync(config_fd);
+}
+
+void NodeRebootHelper::reboot()
+{
+    // make sure we are not called from the executor thread otherwise there
+    // will be a deadlock
+    HASSERT(os_thread_self() != stack->executor()->thread_handle());
+    //shutdown_webserver();
+    LOG(INFO, "[Reboot] Shutting down LCC executor...");
+    stack->executor()->sync_run([&]()
+    {
+        close(config_fd);
+        unmount_fs();
+        // restart the node
+        LOG(INFO, "[Reboot] Restarting!");
+        esp_restart();
+    });
+}
+
+void EventBroadcastHelper::send_event(uint64_t eventID)
+{
+    stack->executor()->add(new CallbackExecutable([&]()
+    {
+        stack->send_event(eventID);
+    }));
+}
+
+template<const unsigned num, const char separator>
+void inject_seperator(std::string & input)
+{
+    for (auto it = input.begin(); (num + 1) <= std::distance(it, input.end());
+        ++it)
+    {
+        std::advance(it, num);
+        it = input.insert(it, separator);
+    }
+}
+
+ConfigUpdateListener::UpdateAction FactoryResetHelper::apply_configuration(
+    int fd, bool initial_load, BarrierNotifiable *done)
+{
+    // nothing to do here as we do not load config
+    AutoNotify n(done);
+    LOG(VERBOSE, "[CFG] apply_configuration(%d, %d)", fd, initial_load);
+
+    return ConfigUpdateListener::UpdateAction::UPDATED;
+}
+
+void FactoryResetHelper::factory_reset(int fd)
+{
+    LOG(VERBOSE, "[CFG] factory_reset(%d)", fd);
+    // set the name of the node to the SNIP model name
+    cfg.userinfo().name().write(fd, openlcb::SNIP_STATIC_DATA.model_name);
+    string node_id = uint64_to_string_hex(stack->node()->node_id(), 12);
+    std::replace(node_id.begin(), node_id.end(), ' ', '0');
+    inject_seperator<2, '.'>(node_id);
+    // set the node description to the node id in expanded hex format.
+    cfg.userinfo().description().write(fd, node_id.c_str());
+}
+
+#ifndef CONFIG_WIFI_STATION_SSID
+#define CONFIG_WIFI_STATION_SSID ""
+#endif
+
+#ifndef CONFIG_WIFI_STATION_PASSWORD
+#define CONFIG_WIFI_STATION_PASSWORD ""
+#endif
+
+#ifndef CONFIG_WIFI_SOFTAP_SSID
+#define CONFIG_WIFI_SOFTAP_SSID "esp32olcbhub"
+#endif
+
+#ifndef CONFIG_WIFI_SOFTAP_PASSWORD
+#define CONFIG_WIFI_SOFTAP_PASSWORD "esp32olcbhub"
+#endif
+
+#ifndef CONFIG_WIFI_RESTART_ON_SSID_CONNECT_FAILURE
+#define CONFIG_WIFI_RESTART_ON_SSID_CONNECT_FAILURE 0
+#endif
+
+#ifndef WIFI_HOSTNAME_PREFIX
+#define WIFI_HOSTNAME_PREFIX "esp32olcbhub_"
+#endif
+
+#ifndef CONFIG_WIFI_SOFTAP_CHANNEL
+#define CONFIG_WIFI_SOFTAP_CHANNEL 1
+#endif
+
+#ifndef CONFIG_SNTP_SERVER
+#define CONFIG_SNTP_SERVER "pool.ntp.org"
+#endif
+
+#ifndef CONFIG_TIMEZONE
+#define CONFIG_TIMEZONE "UTC0"
+#endif
+
+void start_openlcb_stack(node_config_t *config, bool reset_events
+                       , bool brownout_detected)
+{
+    LOG(INFO, "[SNIP] version:%d, manufacturer:%s, model:%s, hw-v:%s, sw-v:%s"
+      , openlcb::SNIP_STATIC_DATA.version
+      , openlcb::SNIP_STATIC_DATA.manufacturer_name
+      , openlcb::SNIP_STATIC_DATA.model_name
+      , openlcb::SNIP_STATIC_DATA.hardware_version
+      , openlcb::SNIP_STATIC_DATA.software_version);
+
+    // Create the LCC stack.
+    stack.emplace(config->node_id);
+    stack->set_tx_activity_led(LED_ACTIVITY_Pin::instance());
+#if CONFIG_OLCB_PRINT_ALL_PACKETS
+    stack->print_all_packets();
+#endif
+
+    memory_client.emplace(stack->node(), stack->memory_config_handler());
+    wifi_manager.emplace(stack.get_mutable(), cfg.seg().wifi()
+                       , (wifi_mode_t)CONFIG_WIFI_MODE
+                       , WIFI_HOSTNAME_PREFIX
+                       , CONFIG_WIFI_STATION_SSID
+                       , CONFIG_WIFI_STATION_PASSWORD
+                       , nullptr        /* default to DHCP */
+                       , ip_addr_any    /* default to DHCP DNS */
+                       , CONFIG_WIFI_SOFTAP_SSID
+                       , CONFIG_WIFI_SOFTAP_PASSWORD
+                       , CONFIG_WIFI_SOFTAP_CHANNEL
+                       , nullptr        /* default SoftAP IP */
+                       , CONFIG_SNTP_SERVER, CONFIG_TIMEZONE
+#if CONFIG_SNTP
+                       , true);
+#else
+                       , false);
+#endif
+    wifi_manager->set_status_led(LED_WIFI_Pin::instance());
+    init_webserver(memory_client.get_mutable(), config->node_id);
+    factory_reset_helper.emplace();
+    event_helper.emplace();
+    delayed_reboot.emplace(stack->service());
+    health_mon.emplace(stack->service());
+    node_reboot_helper.emplace();
+
+    // Create config file and initiate factory reset if it doesn't exist or is
+    // otherwise corrupted.
+    int config_fd =
+        stack->create_config_file_if_needed(cfg.seg().internal_config()
+                                          , CDI_VERSION
+                                          , openlcb::CONFIG_FILE_SIZE);
+
+    if (!config->disable_twai)
+    {
+        stack->executor()->add(new CallbackExecutable([]
+        {
+            // Initialize the TWAI driver
+            twai.hw_init();
+            stack->add_can_port_async("/dev/twai/twai0");
+        }));
+    }
+
+    if (reset_events)
+    {
+        LOG(WARNING, "[CDI] Resetting event IDs");
+        stack->factory_reset_all_events(cfg.seg().internal_config()
+                                      , config->node_id, config_fd);
+        fsync(config_fd);
+    }
+
+    if (brownout_detected)
+    {
+        // Queue the brownout event to be sent.
+        LOG_ERROR("[Brownout] Detected a brownout reset, sending event");
+        event_helper->send_event(openlcb::Defs::NODE_POWER_BROWNOUT_EVENT);
+    }
+
+    // Start the stack in the background using it's own task.
+    stack->start_executor_thread("OpenMRN"
+                               , config_arduino_openmrn_task_priority()
+                               , config_arduino_openmrn_stack_size());
+}
+
+} // namespace esp32olcbhub
 
 namespace openlcb
 {
+    // Path to where OpenMRN should persist general configuration data.
+    const char *const CONFIG_FILENAME = "/fs/config";
+
+    // The size of the memory space to export over the above device.
+    const size_t CONFIG_FILE_SIZE =
+        esp32olcbhub::cfg.seg().size() + esp32olcbhub::cfg.seg().offset();
+
+    // Default to store the dynamic SNIP data is stored in the same persistant
+    // data file as general configuration data.
+    const char *const SNIP_DYNAMIC_FILENAME = "/fs/config";
+
+    /// Defines the identification information for the node. The arguments are:
+    ///
+    /// - 4 (version info, always 4 by the standard
+    /// - Manufacturer name
+    /// - Model name
+    /// - Hardware version
+    /// - Software version
+    ///
+    /// This data will be used for all purposes of the identification:
+    ///
+    /// - the generated cdi.xml will include this data
+    /// - the Simple Node Ident Info Protocol will return this data
+    /// - the ACDI memory space will contain this data.
+    const SimpleNodeStaticValues SNIP_STATIC_DATA =
+    {
+        4,
+        SNIP_PROJECT_PAGE,
+        SNIP_PROJECT_NAME,
+        SNIP_HW_VERSION,
+        SNIP_SW_VERSION
+    };
+
     // pre-generated CDI data.
     const char CDI_DATA[] = R"xmlpayload(<?xml version="1.0"?>
 <cdi xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://openlcb.org/schema/cdi/1/1/cdi.xsd">
@@ -248,185 +494,4 @@ NOTE: Setting this option to a very low value can cause communication failures.<
 )xmlpayload";
     extern const size_t CDI_SIZE;
     const size_t CDI_SIZE = sizeof(CDI_DATA);
-
-    // Path to where OpenMRN should persist general configuration data.
-    const char *const CONFIG_FILENAME = "/fs/config";
-
-    // The size of the memory space to export over the above device.
-    const size_t CONFIG_FILE_SIZE = cfg.seg().size() + cfg.seg().offset();
-
-    // Default to store the dynamic SNIP data is stored in the same persistant
-    // data file as general configuration data.
-    const char *const SNIP_DYNAMIC_FILENAME = "/fs/config";
-
-    /// Defines the identification information for the node. The arguments are:
-    ///
-    /// - 4 (version info, always 4 by the standard
-    /// - Manufacturer name
-    /// - Model name
-    /// - Hardware version
-    /// - Software version
-    ///
-    /// This data will be used for all purposes of the identification:
-    ///
-    /// - the generated cdi.xml will include this data
-    /// - the Simple Node Ident Info Protocol will return this data
-    /// - the ACDI memory space will contain this data.
-    const SimpleNodeStaticValues SNIP_STATIC_DATA =
-    {
-        4,
-        SNIP_PROJECT_PAGE,
-        SNIP_PROJECT_NAME,
-        SNIP_HW_VERSION,
-        SNIP_SW_VERSION
-    };
-}
-
-extern "C" void enter_bootloader()
-{
-    node_config_t config;
-    if (load_config(&config) != ESP_OK)
-    {
-        default_config(&config);
-    }
-    config.bootloader_req = true;
-    save_config(&config);
-    LOG(INFO, "[Bootloader] Rebooting into bootloader");
-    reboot();
-}
-
-uninitialized<openlcb::SimpleCanStack> stack;
-uninitialized<Esp32WiFiManager> wifi_manager;
-uninitialized<FactoryResetHelper> factory_reset_helper;
-uninitialized<esp32olcbhub::DelayRebootHelper> delayed_reboot;
-uninitialized<esp32olcbhub::NodeRebootHelper> node_reboot_helper;
-uninitialized<esp32olcbhub::HealthMonitor> health_mon;
-Esp32HardwareTwai twai(TWAI_RX_PIN, TWAI_TX_PIN);
-
-#ifndef CONFIG_WIFI_STATION_SSID
-#define CONFIG_WIFI_STATION_SSID ""
-#endif
-
-#ifndef CONFIG_WIFI_STATION_PASSWORD
-#define CONFIG_WIFI_STATION_PASSWORD ""
-#endif
-
-#ifndef CONFIG_WIFI_SOFTAP_SSID
-#define CONFIG_WIFI_SOFTAP_SSID "esp32olcbhub"
-#endif
-
-#ifndef CONFIG_WIFI_SOFTAP_PASSWORD
-#define CONFIG_WIFI_SOFTAP_PASSWORD "esp32olcbhub"
-#endif
-
-#ifndef CONFIG_WIFI_RESTART_ON_SSID_CONNECT_FAILURE
-#define CONFIG_WIFI_RESTART_ON_SSID_CONNECT_FAILURE 0
-#endif
-
-#ifndef WIFI_HOSTNAME_PREFIX
-#define WIFI_HOSTNAME_PREFIX "esp32olcbhub_"
-#endif
-
-#ifndef CONFIG_WIFI_SOFTAP_CHANNEL
-#define CONFIG_WIFI_SOFTAP_CHANNEL 1
-#endif
-
-#ifndef CONFIG_SNTP_SERVER
-#define CONFIG_SNTP_SERVER "pool.ntp.org"
-#endif
-
-#ifndef CONFIG_TIMEZONE
-#define CONFIG_TIMEZONE "UTC0"
-#endif
-
-void start_openlcb_stack(node_config_t *config, bool reset_events
-                       , bool brownout_detected)
-{
-    LOG(INFO, "[SNIP] version:%d, manufacturer:%s, model:%s, hw-v:%s, sw-v:%s"
-      , openlcb::SNIP_STATIC_DATA.version
-      , openlcb::SNIP_STATIC_DATA.manufacturer_name
-      , openlcb::SNIP_STATIC_DATA.model_name
-      , openlcb::SNIP_STATIC_DATA.hardware_version
-      , openlcb::SNIP_STATIC_DATA.software_version);
-
-    // Create the LCC stack.
-    stack.emplace(config->node_id);
-    stack->set_tx_activity_led(LED_ACTIVITY_Pin::instance());
-#if CONFIG_OLCB_PRINT_ALL_PACKETS
-    stack->print_all_packets();
-#endif
-
-    wifi_manager.emplace(stack.get_mutable(), cfg.seg().wifi()
-                       , (wifi_mode_t)CONFIG_WIFI_MODE
-                       , WIFI_HOSTNAME_PREFIX
-                       , CONFIG_WIFI_STATION_SSID
-                       , CONFIG_WIFI_STATION_PASSWORD
-                       , nullptr        /* default to DHCP */
-                       , ip_addr_any    /* default to DHCP DNS */
-                       , CONFIG_WIFI_SOFTAP_SSID
-                       , CONFIG_WIFI_SOFTAP_PASSWORD
-                       , CONFIG_WIFI_SOFTAP_CHANNEL
-                       , nullptr        /* default SoftAP IP */
-                       , CONFIG_SNTP_SERVER, CONFIG_TIMEZONE
-#if CONFIG_SNTP
-                       , true);
-#else
-                       , false);
-#endif
-    wifi_manager->set_status_led(LED_WIFI_Pin::instance());
-
-    // Initialize the factory reset helper.
-    factory_reset_helper.emplace(cfg, config->node_id);
-
-    // hook for delayed rebooter.
-    delayed_reboot.emplace(stack->service());
-    health_mon.emplace(stack.get_mutable());
-
-    // Create config file and initiate factory reset if it doesn't exist or is
-    // otherwise corrupted.
-    int config_fd =
-        stack->create_config_file_if_needed(cfg.seg().internal_config()
-                                          , CDI_VERSION
-                                          , openlcb::CONFIG_FILE_SIZE);
-
-    if (reset_events)
-    {
-        LOG(WARNING, "[CDI] Resetting event IDs");
-        stack->factory_reset_all_events(cfg.seg().internal_config()
-                                      , config->node_id, config_fd);
-        fsync(config_fd);
-    }
-
-    // Configure the node reboot helper to allow safe shutdown of file handles
-    // and file systems etc.
-    node_reboot_helper.emplace(stack.get_mutable(), config_fd);
-
-    init_webserver(config_fd, stack.get_mutable());
-
-#if CONFIG_OLCB_ENABLE_TWAI
-    if (!config->disable_twai)
-    {
-        stack->executor()->add(new CallbackExecutable([]
-        {
-            // Initialize the TWAI driver
-            twai.hw_init();
-            stack->add_can_port_async("/dev/twai/twai0");
-        }));
-    }
-#endif // CONFIG_OLCB_ENABLE_TWAI
-
-    if (brownout_detected)
-    {
-        // Queue the brownout event to be sent.
-        stack->executor()->add(new CallbackExecutable([]()
-        {
-            LOG_ERROR("[Brownout] Detected a brownout reset, sending event");
-            stack->send_event(openlcb::Defs::NODE_POWER_BROWNOUT_EVENT);
-        }));
-    }
-
-    // Start the stack in the background using it's own task.
-    stack->start_executor_thread("OpenMRN"
-                               , config_arduino_openmrn_task_priority()
-                               , config_arduino_openmrn_stack_size());
-}
+} // namespace openlcb
