@@ -6,7 +6,7 @@ menu "Pin Configuration"
         help
             This pin can be connected to an LED which will be ON when the WiFi
             has connected to an SSID or the SoftAP is active.
-            NOTE: This LED is Active LOW.
+            Note: This LED is Active LOW.
 
     config LED_STATUS
         int "Status LED"
@@ -15,17 +15,20 @@ menu "Pin Configuration"
         help
             This pin can be connected to an LED which will be used as a status
             indicator.
-            NOTE: This LED is Active LOW.
+            Note: This LED is Active LOW.
 
     config FACTORY_RESET
         int "Factory Reset"
         range 4 39
-        default 39
+        default 15
         help
             This pin can be used to force a factory reset of the configuration.
+            Note: Pin 15 is selected as a default since it typically will have
+            a pull-up resistor on the module. If you are using the ESP32
+            OpenLCB IO Board PCB this should be set to 39.
 
     config USER_BUTTON
-        int "Factory Reset"
+        int "User Button"
         range 4 39
         default 36
         help
