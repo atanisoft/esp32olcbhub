@@ -35,7 +35,6 @@ jobs:
           write-mode: append
       - name: Build
         run: |
-          cat sdkconfig.defaults
           source ~/esp/esp-idf/export.sh
           idf.py reconfigure
           idf.py app
