@@ -1,10 +1,21 @@
 name: Build
 
-on: [push]
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
 
 jobs:
   build:
+    name: Build ${{ matrix.target }}
     runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 2
+      matrix:
+        target: [ESP32OlcbHub, ESP32OlcbHub-iopcb]
 
     steps:
       - uses: actions/checkout@v2
@@ -21,6 +32,12 @@ jobs:
           esp_idf_version: 'release/v4.2'
       - name: Build
         run: |
+          if [ "${{ matrix.target }}" == "ESP32OlcbHub-iopcb" ]; then
+            cat >>sdkconfig.defaults <<CFG_UPDATE
+CONFIG_FACTORY_RESET=39
+CONFIG_USER_BUTTON=36
+CFG_UPDATE
+          fi
           source ~/esp/esp-idf/export.sh
           idf.py reconfigure
           idf.py app
@@ -30,7 +47,7 @@ jobs:
       - name: Package binaries
         uses: actions/upload-artifact@v1
         with:
-          name: Esp32OlcbHub
+          name: ${{ matrix.target }}
           path: binaries
         env:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
