@@ -28,13 +28,14 @@ jobs:
         if: ${{ matrix.target == 'ESP32OlcbHub-iopcb' }}
         uses: DamianReeves/write-file-action@master
         with:
-          path: esp32olcbhub/sdkconfig.defaults
+          path: sdkconfig.defaults
           contents: |
             CONFIG_FACTORY_RESET=39
             CONFIG_USER_BUTTON=36
           write-mode: append
       - name: Build
         run: |
+          cat sdkconfig.defaults
           source ~/esp/esp-idf/export.sh
           idf.py reconfigure
           idf.py app
