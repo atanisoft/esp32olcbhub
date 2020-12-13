@@ -34,9 +34,9 @@ jobs:
         run: |
           if [ "${{ matrix.target }}" == "ESP32OlcbHub-iopcb" ]; then
             cat >>sdkconfig.defaults <<CFG_UPDATE
-CONFIG_FACTORY_RESET=39
-CONFIG_USER_BUTTON=36
-CFG_UPDATE
+            CONFIG_FACTORY_RESET=39
+            CONFIG_USER_BUTTON=36
+            CFG_UPDATE
           fi
           source ~/esp/esp-idf/export.sh
           idf.py reconfigure
