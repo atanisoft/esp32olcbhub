@@ -26,7 +26,7 @@ jobs:
           esp_idf_version: 'release/v4.2'
       - name: Update config for IO PCB
         if: ${{ matrix.target == 'ESP32OlcbHub-iopcb' }}
-        uses: DamianReeves/write-file-action
+        uses: DamianReeves/write-file-action@master
         with:
           path: esp32olcbhub/sdkconfig.defaults
           contents: |
