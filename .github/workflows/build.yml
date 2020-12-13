@@ -24,14 +24,17 @@ jobs:
         uses: CalinRadoni/esp-idf-v4-action@v2
         with:
           esp_idf_version: 'release/v4.2'
-      - name: Build
-        run: |
-          if [ "${{ matrix.target }}" == "ESP32OlcbHub-iopcb" ]; then
-            cat >>sdkconfig.defaults <<CFG_UPDATE
+      - name: Update config for IO PCB
+        if: ${{ matrix.target == 'ESP32OlcbHub-iopcb' }}
+        uses: DamianReeves/write-file-action
+        with:
+          path: esp32olcbhub/sdkconfig.defaults
+          contents: |
             CONFIG_FACTORY_RESET=39
             CONFIG_USER_BUTTON=36
-            CFG_UPDATE
-          fi
+          write-mode: append
+      - name: Build
+        run: |
           source ~/esp/esp-idf/export.sh
           idf.py reconfigure
           idf.py app
