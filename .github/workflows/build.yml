@@ -4,7 +4,12 @@ on: [push]
 
 jobs:
   build:
+    name: Build ${{ matrix.target }}
     runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 2
+      matrix:
+        target: [ESP32OlcbHub, ESP32OlcbHub-iopcb]
 
     steps:
       - uses: actions/checkout@v2
@@ -19,6 +24,15 @@ jobs:
         uses: CalinRadoni/esp-idf-v4-action@v2
         with:
           esp_idf_version: 'release/v4.2'
+      - name: Update config for IO PCB
+        if: ${{ matrix.target == 'ESP32OlcbHub-iopcb' }}
+        uses: DamianReeves/write-file-action@master
+        with:
+          path: sdkconfig.defaults
+          contents: |
+            CONFIG_FACTORY_RESET=39
+            CONFIG_USER_BUTTON=36
+          write-mode: append
       - name: Build
         run: |
           source ~/esp/esp-idf/export.sh
@@ -30,7 +44,7 @@ jobs:
       - name: Package binaries
         uses: actions/upload-artifact@v1
         with:
-          name: Esp32OlcbHub
+          name: ${{ matrix.target }}
           path: binaries
         env:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
