@@ -36,15 +36,25 @@
 #define NVS_CONFIG_HXX_
 
 #include <esp_err.h>
+#include <esp_wifi_types.h>
 #include <stdint.h>
 
 typedef struct
 {
     bool force_reset;
-    bool bootloader_req;
-    bool disable_twai;
     uint64_t node_id;
-    uint8_t reserved[21];
+    wifi_mode_t wifi_mode;
+    char hostname_prefix[16];
+    char station_ssid[33];
+    char station_pass[33];
+    char softap_ssid[33];
+    char softap_pass[33];
+    wifi_auth_mode_t softap_auth;
+    uint8_t softap_channel;
+    char sntp_server[33];
+    char timezone[33];
+    bool sntp_enabled;
+    uint8_t reserved[29];
 } node_config_t;
 
 esp_err_t load_config(node_config_t *config);

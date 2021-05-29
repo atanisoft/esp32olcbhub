@@ -36,10 +36,25 @@
 #include "hardware.hxx"
 
 #include <bootloader_hal.h>
-#include "Esp32BootloaderHal.hxx"
+#include <freertos_drivers/esp32/Esp32BootloaderHal.hxx>
+
+/// Variable used to indicate that the startup should go into the bootloader
+/// rather than default startup mode.
+static uint32_t RTC_NOINIT_ATTR bootloader_request;
+
+static constexpr uint32_t BOOTLOADER_REQUEST_ENABLED = 1;
+static constexpr uint32_t BOOTLOADER_REQUEST_DISABLED = 0;
+
 
 extern "C"
 {
+
+void enter_bootloader()
+{
+    bootloader_request = BOOTLOADER_REQUEST_ENABLED;
+    LOG(INFO, "[Bootloader] Rebooting into bootloader");
+    reboot();
+}
 
 /// Initializes the node specific bootloader hardware (LEDs)
 void bootloader_hw_set_to_safe(void)
@@ -51,16 +66,11 @@ void bootloader_hw_set_to_safe(void)
 
 /// Verifies that the bootloader has been requested.
 ///
-/// @return true (always).
-///
-/// NOTE: On the ESP32 this defaults to always return true since this code will
-/// not be invoked through normal node startup.
+/// @return true if the bootloader has been requested, false otherwise.
 bool request_bootloader(void)
 {
     LOG(VERBOSE, "[Bootloader] request_bootloader");
-    // Default to allow bootloader to run since we are not entering the
-    // bootloader loop unless requested by app_main.
-    return true;
+    return bootloader_request == BOOTLOADER_REQUEST_ENABLED;
 }
 
 /// Updates the state of a status LED.
@@ -98,5 +108,27 @@ void bootloader_led(enum BootloaderLed led, bool value)
 /// @param id is the node identifier to use.
 void start_bootloader_stack(uint64_t id)
 {
-    esp32_bootloader_run(id, TWAI_TX_PIN, TWAI_RX_PIN, true);
+    esp32_bootloader_run(id, TWAI_TX_PIN, TWAI_RX_PIN, false);
+    bootloader_request = BOOTLOADER_REQUEST_DISABLED;
+    esp_restart();
+}
+
+/// Initializes the ESP32 Bootloader request variable if the startup reason is
+/// matching to a fresh startup.
+///
+/// @param reason is the SoC restart reason.
+void initialize_bootloader_vars(uint8_t reason)
+{
+    // If this is the first power up of the node we need to reset the flag
+    // since it will not be initialized automatically.
+    if (reason == POWERON_RESET)
+    {
+        bootloader_request = BOOTLOADER_REQUEST_DISABLED;
+    }
+}
+
+/// Sets the ESP32 Bootloader request flag as enabled.
+void set_bootloader_requested()
+{
+    bootloader_request = BOOTLOADER_REQUEST_ENABLED;
 }

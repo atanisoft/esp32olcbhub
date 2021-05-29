@@ -44,8 +44,10 @@
 #include "nvs_config.hxx"
 #include "web_server.hxx"
 
+#include <CDIXMLGenerator.hxx>
 #include <freertos_drivers/esp32/Esp32HardwareTwai.hxx>
 #include <freertos_drivers/esp32/Esp32WiFiManager.hxx>
+#include <nmranet_config.h>
 #include <openlcb/MemoryConfigClient.hxx>
 #include <openlcb/SimpleStack.hxx>
 #include <openlcb/SimpleNodeInfo.hxx>
@@ -53,23 +55,57 @@
 #include <utils/format_utils.hxx>
 #include <utils/Uninitialized.hxx>
 
-extern "C" void enter_bootloader()
-{
-    node_config_t config;
-    if (load_config(&config) != ESP_OK)
-    {
-        default_config(&config);
-    }
-    config.bootloader_req = true;
-    save_config(&config);
-    LOG(INFO, "[Bootloader] Rebooting into bootloader");
-    reboot();
-}
-
 namespace esp32olcbhub
 {
 
 static ConfigDef cfg(0);
+}
+
+namespace openlcb
+{
+    /// Name of CDI.xml to generate dynamically.
+    const char CDI_FILENAME[] = "/fs/cdi.xml";
+
+    // Path to where OpenMRN should persist general configuration data.
+    const char *const CONFIG_FILENAME = "/fs/config";
+
+    // The size of the memory space to export over the above device.
+    const size_t CONFIG_FILE_SIZE =
+        esp32olcbhub::cfg.seg().size() + esp32olcbhub::cfg.seg().offset();
+
+    // Default to store the dynamic SNIP data is stored in the same persistant
+    // data file as general configuration data.
+    const char *const SNIP_DYNAMIC_FILENAME = "/fs/config";
+
+    /// This will stop openlcb from exporting the CDI memory space upon start.
+    extern const char CDI_DATA[] = "";
+
+    /// Defines the identification information for the node. The arguments are:
+    ///
+    /// - 4 (version info, always 4 by the standard
+    /// - Manufacturer name
+    /// - Model name
+    /// - Hardware version
+    /// - Software version
+    ///
+    /// This data will be used for all purposes of the identification:
+    ///
+    /// - the generated cdi.xml will include this data
+    /// - the Simple Node Ident Info Protocol will return this data
+    /// - the ACDI memory space will contain this data.
+    const SimpleNodeStaticValues SNIP_STATIC_DATA =
+    {
+        4,
+        SNIP_PROJECT_PAGE,
+        SNIP_PROJECT_NAME,
+        SNIP_HW_VERSION,
+        SNIP_SW_VERSION
+    };
+} // namespace openlcb
+
+namespace esp32olcbhub
+{
+
 static int config_fd;
 uninitialized<openlcb::SimpleCanStack> stack;
 uninitialized<Esp32WiFiManager> wifi_manager;
@@ -147,42 +183,6 @@ void FactoryResetHelper::factory_reset(int fd)
     cfg.userinfo().description().write(fd, node_id.c_str());
 }
 
-#ifndef CONFIG_WIFI_STATION_SSID
-#define CONFIG_WIFI_STATION_SSID ""
-#endif
-
-#ifndef CONFIG_WIFI_STATION_PASSWORD
-#define CONFIG_WIFI_STATION_PASSWORD ""
-#endif
-
-#ifndef CONFIG_WIFI_SOFTAP_SSID
-#define CONFIG_WIFI_SOFTAP_SSID "esp32olcbhub"
-#endif
-
-#ifndef CONFIG_WIFI_SOFTAP_PASSWORD
-#define CONFIG_WIFI_SOFTAP_PASSWORD "esp32olcbhub"
-#endif
-
-#ifndef CONFIG_WIFI_RESTART_ON_SSID_CONNECT_FAILURE
-#define CONFIG_WIFI_RESTART_ON_SSID_CONNECT_FAILURE 0
-#endif
-
-#ifndef WIFI_HOSTNAME_PREFIX
-#define WIFI_HOSTNAME_PREFIX "esp32olcbhub_"
-#endif
-
-#ifndef CONFIG_WIFI_SOFTAP_CHANNEL
-#define CONFIG_WIFI_SOFTAP_CHANNEL 1
-#endif
-
-#ifndef CONFIG_SNTP_SERVER
-#define CONFIG_SNTP_SERVER "pool.ntp.org"
-#endif
-
-#ifndef CONFIG_TIMEZONE
-#define CONFIG_TIMEZONE "UTC0"
-#endif
-
 void start_openlcb_stack(node_config_t *config, bool reset_events
                        , bool brownout_detected)
 {
@@ -200,24 +200,25 @@ void start_openlcb_stack(node_config_t *config, bool reset_events
     stack->print_all_packets();
 #endif
 
+    // Create / update CDI, if the CDI is out of date a factory reset will be
+    // forced.
+    bool reset_cdi = CDIXMLGenerator::create_config_descriptor_xml(
+        cfg, openlcb::CDI_FILENAME, stack.get_mutable());
+    if (reset_cdi)
+    {
+        LOG(WARNING, "[CDI] Forcing factory reset due to CDI update");
+        unlink(openlcb::CONFIG_FILENAME);
+    }
+
     memory_client.emplace(stack->node(), stack->memory_config_handler());
-    wifi_manager.emplace(stack.get_mutable(), cfg.seg().wifi()
-                       , (wifi_mode_t)CONFIG_WIFI_MODE
-                       , WIFI_HOSTNAME_PREFIX
-                       , CONFIG_WIFI_STATION_SSID
-                       , CONFIG_WIFI_STATION_PASSWORD
-                       , nullptr        /* default to DHCP */
-                       , ip_addr_any    /* default to DHCP DNS */
-                       , CONFIG_WIFI_SOFTAP_SSID
-                       , CONFIG_WIFI_SOFTAP_PASSWORD
-                       , CONFIG_WIFI_SOFTAP_CHANNEL
-                       , nullptr        /* default SoftAP IP */
-                       , CONFIG_SNTP_SERVER, CONFIG_TIMEZONE
-#if CONFIG_SNTP
-                       , true);
-#else
-                       , false);
-#endif
+    wifi_manager.emplace(config->station_ssid, config->station_pass,
+                         stack.get_mutable(), cfg.seg().wifi(),
+                         config->wifi_mode, config->hostname_prefix,
+                         config->sntp_server, config->timezone,
+                         config->sntp_enabled, config->softap_channel,
+                         config->softap_auth, config->softap_ssid,
+                         config->softap_pass);
+
     wifi_manager->set_status_led(LED_WIFI_Pin::instance());
     init_webserver(memory_client.get_mutable(), config->node_id);
     factory_reset_helper.emplace();
@@ -233,15 +234,9 @@ void start_openlcb_stack(node_config_t *config, bool reset_events
                                           , CDI_VERSION
                                           , openlcb::CONFIG_FILE_SIZE);
 
-    if (!config->disable_twai)
-    {
-        stack->executor()->add(new CallbackExecutable([]
-        {
-            // Initialize the TWAI driver
-            twai.hw_init();
-            stack->add_can_port_async("/dev/twai/twai0");
-        }));
-    }
+    // Initialize the TWAI driver
+    twai.hw_init();
+    stack->add_can_port_select("/dev/twai/twai0");
 
     if (reset_events)
     {
@@ -259,239 +254,7 @@ void start_openlcb_stack(node_config_t *config, bool reset_events
     }
 
     // Start the stack in the background using it's own task.
-    stack->start_executor_thread("OpenMRN"
-                               , config_arduino_openmrn_task_priority()
-                               , config_arduino_openmrn_stack_size());
+    stack->start_executor_thread("OpenMRN", 0, 4096);
 }
 
 } // namespace esp32olcbhub
-
-namespace openlcb
-{
-    // Path to where OpenMRN should persist general configuration data.
-    const char *const CONFIG_FILENAME = "/fs/config";
-
-    // The size of the memory space to export over the above device.
-    const size_t CONFIG_FILE_SIZE =
-        esp32olcbhub::cfg.seg().size() + esp32olcbhub::cfg.seg().offset();
-
-    // Default to store the dynamic SNIP data is stored in the same persistant
-    // data file as general configuration data.
-    const char *const SNIP_DYNAMIC_FILENAME = "/fs/config";
-
-    /// Defines the identification information for the node. The arguments are:
-    ///
-    /// - 4 (version info, always 4 by the standard
-    /// - Manufacturer name
-    /// - Model name
-    /// - Hardware version
-    /// - Software version
-    ///
-    /// This data will be used for all purposes of the identification:
-    ///
-    /// - the generated cdi.xml will include this data
-    /// - the Simple Node Ident Info Protocol will return this data
-    /// - the ACDI memory space will contain this data.
-    const SimpleNodeStaticValues SNIP_STATIC_DATA =
-    {
-        4,
-        SNIP_PROJECT_PAGE,
-        SNIP_PROJECT_NAME,
-        SNIP_HW_VERSION,
-        SNIP_SW_VERSION
-    };
-
-    // pre-generated CDI data.
-    const char CDI_DATA[] = R"xmlpayload(<?xml version="1.0"?>
-<cdi xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://openlcb.org/schema/cdi/1/1/cdi.xsd">
-<identification>
-<manufacturer>http://atanisoft.github.io/esp32olcbhub</manufacturer>
-<model>ESP32OlcbHub</model>
-<hardwareVersion>1.0</hardwareVersion>
-<softwareVersion>1.0</softwareVersion>
-</identification>
-<acdi/>
-<segment space='251' origin='1'>
-<string size='63'>
-<name>User Name</name>
-<description>This name will appear in network browsers for the current node.</description>
-</string>
-<string size='64'>
-<name>User Description</name>
-<description>This description will appear in network browsers for the current node.</description>
-</string>
-</segment>
-<segment space='253' origin='128'>
-<group>
-<name>Internal data</name>
-<description>Do not change these settings.</description>
-<int size='2'>
-<name>Version</name>
-</int>
-<int size='2'>
-<name>Next event ID</name>
-</int>
-</group>
-<group>
-<name>WiFi Configuration</name>
-<int size='1'>
-<name>WiFi mode</name>
-<description>Configures the WiFi operating mode.</description>
-<min>0</min>
-<max>3</max>
-<default>2</default>
-<map><relation><property>0</property><value>Off</value></relation><relation><property>1</property><value>Station Only</value></relation><relation><property>2</property><value>SoftAP Only</value></relation><relation><property>3</property><value>SoftAP and Station</value></relation></map>
-</int>
-<string size='21'>
-<name>Hostname prefix</name>
-<description>Configures the hostname prefix used by the node.
-Note: the node ID will be appended to this value.</description>
-</string>
-<string size='32'>
-<name>Station SSID</name>
-<description>Configures the SSID that the ESP32 will connect to.</description>
-</string>
-<string size='128'>
-<name>Station password</name>
-<description>Configures the password that the ESP32 will use for the station SSID.</description>
-</string>
-<string size='32'>
-<name>SoftAP SSID</name>
-<description>Configures the SSID that the ESP32 will use for the SoftAP.</description>
-</string>
-<string size='128'>
-<name>SoftAP assword</name>
-<description>Configures the password that the ESP32 will use for the SoftAP.</description>
-</string>
-<int size='1'>
-<name>Authentication Mode</name>
-<description>Configures the authentication mode of the SoftAP.</description>
-<min>0</min>
-<max>7</max>
-<default>3</default>
-<map><relation><property>0</property><value>Open</value></relation><relation><property>1</property><value>WEP</value></relation><relation><property>2</property><value>WPA</value></relation><relation><property>3</property><value>WPA2</value></relation><relation><property>4</property><value>WPA/WPA2</value></relation></map>
-</int>
-<int size='1'>
-<name>WiFi Channel</name>
-<description>Configures the WiFi channel to use for the SoftAP.
-Note: Some channels overlap eachother and may not provide optimal performance.Recommended channels are: 1, 6, 11 since these do not overlap.</description>
-<min>1</min>
-<max>14</max>
-<default>1</default>
-</int>
-<int size='1'>
-<name>Enable SNTP</name>
-<description>Enabling this option will allow the ESP32 to poll an SNTP server at regular intervals to obtain the current time. The refresh interval roughly once per hour.</description>
-<min>0</min>
-<max>1</max>
-<default>0</default>
-<map><relation><property>0</property><value>Disabled</value></relation><relation><property>1</property><value>Enabled</value></relation></map>
-</int>
-<string size='64'>
-<name>SNTP Server</name>
-<description>Enter the SNTP Server address. Example: pool.ntp.org
-Most of the time this does not need to be changed.</description>
-</string>
-<string size='64'>
-<name>TimeZone</name>
-<description>This is the timezone that the ESP32 should use, note it must be in POSIX notation. Note: The timezone is only configured when SNTP is also enabled.
-A few common values:
-PST8PDT,M3.2.0,M11.1.0 -- UTC-8 with automatic DST adjustment
-MST7MDT,M3.2.0,M11.1.0 -- UTC-7 with automatic DST adjustment
-CST6CDT,M3.2.0,M11.1.0 -- UTC-6 with automatic DST adjustment
-EST5EDT,M3.2.0,M11.1.0 -- UTC-5 with automatic DST adjustment
-A complete list can be seen here in the second column:
-https://github.com/nayarsystems/posix_tz_db/blob/master/zones.csv</description>
-</string>
-<group>
-<name>Hub Configuration</name>
-<description>Configuration settings for an OpenLCB Hub</description>
-<int size='1'>
-<name>Enable</name>
-<description>Configures this node as an OpenLCB hub which can accept connections from other nodes.
-NOTE: This may cause some instability as the number of connected nodes increases.</description>
-<min>0</min>
-<max>1</max>
-<default>0</default>
-<map><relation><property>0</property><value>Disabled</value></relation><relation><property>1</property><value>Enabled</value></relation></map>
-</int>
-<int size='2'>
-<name>Hub Listener Port</name>
-<description>Defines the TCP/IP listener port this node will use when operating as a hub. Most of the time this does not need to be changed.</description>
-<min>1</min>
-<max>65535</max>
-<default>12021</default>
-</int>
-<string size='64'>
-<name>mDNS Service</name>
-<description>mDNS or Bonjour service name, such as _openlcb-can._tcp</description>
-</string>
-<group offset='6'/>
-</group>
-<group>
-<name>Uplink Configuration</name>
-<description>Configures how this node will connect to other nodes.</description>
-<int size='1'>
-<name>Enable</name>
-<description>Enables connecting to an OpenLCB Hub. In some cases it may be desirable to disable the uplink, such as a CAN only configuration.</description>
-<min>0</min>
-<max>1</max>
-<default>1</default>
-<map><relation><property>0</property><value>Disabled</value></relation><relation><property>1</property><value>Enabled</value></relation></map>
-</int>
-<string size='64'>
-<name>mDNS Service</name>
-<description>mDNS or Bonjour service name, such as _openlcb-can._tcp</description>
-</string>
-<string size='64'>
-<name>IP Address</name>
-<description>Enter the server IP address. Example: 192.168.0.55
-Note: This will be used as a fallback when mDNS lookup is not successful.</description>
-</string>
-<int size='2'>
-<name>Port Number</name>
-<description>TCP port number of the server. Most of the time this does not need to be changed.</description>
-<min>1</min>
-<max>65535</max>
-<default>12021</default>
-</int>
-</group>
-<int size='1'>
-<name>WiFi Power Savings Mode</name>
-<description>When enabled this allows the ESP32 WiFi radio to use power savings mode which puts the radio to sleep except to receive beacon updates from the connected SSID. This should generally not need to be enabled unless you are powering the ESP32 from a battery.</description>
-<min>0</min>
-<max>1</max>
-<default>0</default>
-<map><relation><property>0</property><value>Disabled</value></relation><relation><property>1</property><value>Enabled</value></relation></map>
-</int>
-<int size='1'>
-<name>WiFi Transmit Power</name>
-<description>WiFi Radio transmit power in dBm. This can be used to limit the WiFi range. This option generally does not need to be changed.
-NOTE: Setting this option to a very low value can cause communication failures.</description>
-<min>8</min>
-<max>78</max>
-<default>78</default>
-<map><relation><property>8</property><value>2 dBm</value></relation><relation><property>20</property><value>5 dBm</value></relation><relation><property>28</property><value>7 dBm</value></relation><relation><property>34</property><value>8 dBm</value></relation><relation><property>44</property><value>11 dBm</value></relation><relation><property>52</property><value>13 dBm</value></relation><relation><property>56</property><value>14 dBm</value></relation><relation><property>60</property><value>15 dBm</value></relation><relation><property>66</property><value>16 dBm</value></relation><relation><property>72</property><value>18 dBm</value></relation><relation><property>78</property><value>20 dBm</value></relation></map>
-</int>
-<int size='1'>
-<name>Wait for successful SSID connection</name>
-<description>Enabling this option will cause the node to restart when there is a failure (or timeout) during the SSID connection process.</description>
-<min>0</min>
-<max>1</max>
-<default>1</default>
-<map><relation><property>0</property><value>Disabled</value></relation><relation><property>1</property><value>Enabled</value></relation></map>
-</int>
-</group>
-</segment>
-<segment space='253'>
-<name>Version information</name>
-<int size='1'>
-<name>ACDI User Data version</name>
-<description>Set to 2 and do not change.</description>
-</int>
-</segment>
-</cdi>
-)xmlpayload";
-    extern const size_t CDI_SIZE;
-    const size_t CDI_SIZE = sizeof(CDI_DATA);
-} // namespace openlcb

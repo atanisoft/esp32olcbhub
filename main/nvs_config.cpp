@@ -106,11 +106,66 @@ esp_err_t save_config(node_config_t *config)
 #define CONFIG_OLCB_NODE_ID 0x050201030000
 #endif
 
+#ifndef CONFIG_WIFI_MODE
+#define CONFIG_WIFI_MODE WIFI_MODE_AP
+#endif
+
+#ifndef CONFIG_WIFI_STATION_SSID
+#define CONFIG_WIFI_STATION_SSID ""
+#endif
+
+#ifndef CONFIG_WIFI_STATION_PASSWORD
+#define CONFIG_WIFI_STATION_PASSWORD ""
+#endif
+
+#ifndef CONFIG_WIFI_SOFTAP_SSID
+#define CONFIG_WIFI_SOFTAP_SSID "esp32olcbhub"
+#endif
+
+#ifndef CONFIG_WIFI_SOFTAP_PASSWORD
+#define CONFIG_WIFI_SOFTAP_PASSWORD "esp32olcbhub"
+#endif
+
+#ifndef CONFIG_WIFI_SOFTAP_AUTH
+#define CONFIG_WIFI_SOFTAP_AUTH WIFI_AUTH_OPEN
+#endif
+
+#ifndef CONFIG_WIFI_HOSTNAME_PREFIX
+#define CONFIG_WIFI_HOSTNAME_PREFIX "esp32olcbhub_"
+#endif
+
+#ifndef CONFIG_WIFI_SOFTAP_CHANNEL
+#define CONFIG_WIFI_SOFTAP_CHANNEL 1
+#endif
+
+#ifndef CONFIG_SNTP_SERVER
+#define CONFIG_SNTP_SERVER "pool.ntp.org"
+#endif
+
+#ifndef CONFIG_TIMEZONE
+#define CONFIG_TIMEZONE "UTC0"
+#endif
+
 esp_err_t default_config(node_config_t *config)
 {
     LOG(INFO, "[NVS] Initializing default configuration");
-    bzero(config, sizeof(node_config_t));
+    memset(config, 0, sizeof(node_config_t));
     config->node_id = CONFIG_OLCB_NODE_ID;
+    config->wifi_mode = (wifi_mode_t)CONFIG_WIFI_MODE;
+    str_populate(config->hostname_prefix, CONFIG_WIFI_HOSTNAME_PREFIX);
+    str_populate(config->station_ssid, CONFIG_WIFI_STATION_SSID);
+    str_populate(config->station_pass, CONFIG_WIFI_STATION_PASSWORD);
+    str_populate(config->softap_ssid, CONFIG_WIFI_SOFTAP_SSID);
+    str_populate(config->softap_pass, CONFIG_WIFI_SOFTAP_PASSWORD);
+    config->softap_auth = (wifi_auth_mode_t)CONFIG_WIFI_SOFTAP_AUTH;
+#if defined(CONFIG_SNTP)
+    config->sntp_enabled = true;
+#else
+    config->sntp_enabled = false;
+#endif
+    str_populate(config->sntp_server, CONFIG_SNTP_SERVER);
+    str_populate(config->timezone, CONFIG_TIMEZONE);
+
     return save_config(config);
 }
 
@@ -138,8 +193,41 @@ void nvs_init()
 void dump_config(node_config_t *config)
 {
     // display current configuration settings.
-    LOG(INFO, "[NVS] Node ID: %s"
-      , uint64_to_string_hex(config->node_id).c_str());
+    LOG(INFO, "[NVS] Node ID: %s",
+        uint64_to_string_hex(config->node_id).c_str());
+    LOG(INFO, "[NVS] WiFi configuration:");
+    LOG(INFO, "Mode: %s (%d)",
+        config->wifi_mode == WIFI_MODE_NULL ? "Off" :
+        config->wifi_mode == WIFI_MODE_AP ? "SoftAP" :
+        config->wifi_mode == WIFI_MODE_STA ? "Station" : "Station / SoftAP",
+        config->wifi_mode);
+    LOG(INFO, "Hostname Prefix: %s", config->hostname_prefix);
+    if (config->wifi_mode == WIFI_MODE_STA ||
+        config->wifi_mode == WIFI_MODE_APSTA)
+    {
+        LOG(INFO, "Station SSID: %s", config->station_ssid);
+    }
+    if (config->wifi_mode == WIFI_MODE_AP ||
+        config->wifi_mode == WIFI_MODE_APSTA)
+    {
+        LOG(INFO, "SoftAP SSID: %s", config->softap_ssid);
+        LOG(INFO, "SoftAP Auth: %s (%d)",
+            config->softap_auth == WIFI_AUTH_OPEN ? "Open" :
+            config->softap_auth == WIFI_AUTH_WEP ? "WEP" :
+            config->softap_auth == WIFI_AUTH_WPA_PSK ? "WPA" :
+            config->softap_auth == WIFI_AUTH_WPA2_PSK ? "WPA2" :
+            config->softap_auth == WIFI_AUTH_WPA_WPA2_PSK ? "WPA/WPA2" :
+            config->softap_auth == WIFI_AUTH_WPA3_PSK ? "WPA3" : "WPA2/WPA3",
+            config->softap_auth);
+    }
+    if (config->sntp_enabled)
+    {
+        LOG(INFO, "SNTP: %s / %s", config->sntp_server, config->timezone);
+    }
+    else
+    {
+        LOG(INFO, "SNTP: Off");
+    }
 }
 
 bool set_node_id(uint64_t node_id)

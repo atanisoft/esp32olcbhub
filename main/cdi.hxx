@@ -43,7 +43,7 @@ namespace esp32olcbhub
     
 /// Defines the main segment in the configuration CDI. This is laid out at
 /// origin 128 to give space for the ACDI user data at the beginning.
-CDI_GROUP(IoBoard, Segment(openlcb::MemoryConfigDefs::SPACE_CONFIG),
+CDI_GROUP(OlcbHub, Segment(openlcb::MemoryConfigDefs::SPACE_CONFIG),
           Offset(128));
 /// Each entry declares the name of the current entry, then the type and then
 /// optional arguments list.
@@ -68,9 +68,9 @@ CDI_GROUP_ENTRY(ident, openlcb::Identification);
 CDI_GROUP_ENTRY(acdi, openlcb::Acdi);
 /// Adds a segment for changing the values in the ACDI user-defined
 /// space. UserInfoSegment is defined in the system header.
-CDI_GROUP_ENTRY(userinfo, openlcb::UserInfoSegment);
+CDI_GROUP_ENTRY(userinfo, openlcb::UserInfoSegment, Name("User Info"));
 /// Adds the main configuration segment.
-CDI_GROUP_ENTRY(seg, IoBoard);
+CDI_GROUP_ENTRY(seg, OlcbHub, Name("Settings"));
 /// Adds the versioning segment.
 CDI_GROUP_ENTRY(version, VersionSeg);
 CDI_GROUP_END();

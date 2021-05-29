@@ -44,7 +44,6 @@ menu "Pin Configuration"
         int "TWAI (CAN) RX Pin"
         range 4 39
         default 4
-        depends on OLCB_ENABLE_TWAI
         help
             This is the ESP32 pin connected to the external CAN Transceiver RX
             pin. A few CAN transceivers that have been tested successfully are:
@@ -58,7 +57,6 @@ menu "Pin Configuration"
         int "TWAI (CAN) TX Pin"
         range 4 33
         default 5
-        depends on OLCB_ENABLE_TWAI
         help
             This is the ESP32 pin connected to the external CAN Transceiver TX
             pin. A few CAN transceivers that have been tested successfully are:
@@ -88,10 +86,6 @@ menu "OpenLCB Configuration"
         help
             Enabling this option will cause all packets that are sent or
             received to be printed by the ESP32 OpenLCB Hub.
-
-    config OLCB_ENABLE_TWAI
-        bool "Enable TWAI (CAN) interface"
-        default y
 endmenu
 
 menu "WiFi Configuration"
@@ -147,7 +141,36 @@ menu "WiFi Configuration"
             are fourteen channels available to pick from and some are better
             than others. The best channels to pick from are: 1, 6, 11 since
             these do not overlap with other channels.
-    
+
+    choice WIFI_SOFTAP_AUTH
+        bool "SoftAP Authentication Mode"
+        depends on WIFI_MODE_SOFTAP || WIFI_MODE_SOFTAP_STATION
+        config WIFI_SOFTAP_AUTH_OPEN
+            bool "Open (No Authentication)"
+        config WIFI_SOFTAP_AUTH_WEP
+            bool "WEP"
+        config WIFI_SOFTAP_AUTH_WPA_PSK
+            bool "WPA"
+        config WIFI_SOFTAP_AUTH_WPA2_PSK
+            bool "WPA2"
+        config WIFI_SOFTAP_AUTH_WPA_WPA2_PSK
+            bool "WPA/WPA2"
+        config WIFI_SOFTAP_AUTH_WPA3_PSK
+            bool "WPA3"
+        config WIFI_SOFTAP_AUTH_WPA2_WPA3_PSK
+            bool "WPA2/WPA3"
+    endchoice
+
+    config WIFI_SOFTAP_AUTH
+        int
+        default 0 if WIFI_SOFTAP_AUTH_OPEN
+        default 1 if WIFI_SOFTAP_AUTH_WEP
+        default 2 if WIFI_SOFTAP_AUTH_WPA_PSK
+        default 3 if WIFI_SOFTAP_AUTH_WPA2_PSK
+        default 4 if WIFI_SOFTAP_AUTH_WPA_WPA2_PSK
+        default 6 if WIFI_SOFTAP_AUTH_WPA3_PSK
+        default 7 if WIFI_SOFTAP_AUTH_WPA2_WPA3_PSK
+
     config WIFI_STATION_SSID
         string "Station SSID"
         depends on WIFI_MODE_STATION || WIFI_MODE_SOFTAP_STATION
@@ -201,8 +224,4 @@ menu "Advanced Configuration"
     config HEALTH_INTERVAL
         int "Health report interval (sec)"
         default 15
-
-    config USE_LITTLEFS
-        bool "Use LittleFS"
-        default n
 endmenu

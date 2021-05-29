@@ -1,9 +1,6 @@
 [submodule "components/HttpServer"]
 	path = components/HttpServer
 	url = https://github.com/atanisoft/HttpServer.git
-[submodule "components/OpenMRNLite"]
-	path = components/OpenMRNLite
+[submodule "components/OpenMRNIDF"]
+	path = components/OpenMRNIDF
 	url = https://github.com/atanisoft/OpenMRNIDF.git
-[submodule "components/esp_littlefs"]
-	path = components/esp_littlefs
-	url = https://github.com/joltwallet/esp_littlefs.git

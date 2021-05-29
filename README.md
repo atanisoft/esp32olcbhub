@@ -25,5 +25,5 @@ The ESP32 OpenLCB Hub supports receiving firmware over the CAN interface from JM
 
 ## Building
 
-The ESP32 OpenLCB Hub requires ESP-IDF v4.0 or later. When cloning the code be sure to clone recursively:
-`git clone --recursive git@github.com:atanisoft/esp32olcbhub.git`. If you receive an error related to littlefs it is likely that the esp_littlefs dependencies are not present, to fix this navigate to `components/esp_littlefs` and execute `git submodule update --init --recursive`.
+The ESP32 OpenLCB Hub requires ESP-IDF v4.3 or later. When cloning the code be sure to clone recursively:
+`git clone --recursive git@github.com:atanisoft/esp32olcbhub.git`. The CMake build system will abort if the submodules are not present.

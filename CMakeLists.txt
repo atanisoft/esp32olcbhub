@@ -7,6 +7,26 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 set(SUPPORTED_TARGETS esp32)
 project(ESP32OlcbHub)
 
+if (IDF_VERSION_MAJOR LESS 4)
+    message(FATAL_ERROR "ESP32OlcbHub requires IDF v4.3 (or newer)")
+endif()
+
+if (IDF_VERSION_MAJOR EQUAL 4 AND IDF_VERSION_MINOR LESS 3)
+    message(FATAL_ERROR "ESP32OlcbHub requires IDF v4.3 (or newer)")
+endif()
+
+###############################################################################
+# Verify submodules were checked out correctly
+###############################################################################
+
+if (NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/components/OpenMRNIDF/CMakeLists.txt)
+    message(FATAL_ERROR "${CMAKE_CURRENT_SOURCE_DIR}/components/OpenMRNIDF does not appear to have been checked out, please run 'git submodule update --init' from ${CMAKE_CURRENT_SOURCE_DIR}")
+endif()
+
+if (NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/components/HttpServer/CMakeLists.txt)
+    message(FATAL_ERROR "${CMAKE_CURRENT_SOURCE_DIR}/components/HttpServer does not appear to have been checked out, please run 'git submodule update --init' from ${CMAKE_CURRENT_SOURCE_DIR}")
+endif()
+
 ###############################################################################
 # Switch from GNU++11 to GNU++14
 #
@@ -21,17 +41,6 @@ idf_build_set_property(CXX_COMPILE_OPTIONS "${CXX_OPTIONS}" REPLACE)
 ###############################################################################
 
 idf_build_set_property(COMPILE_DEFINITIONS "-D_GLIBCXX_USE_C99" APPEND)
-
-###############################################################################
-# Uncomment the below to enable NDEBUG build mode
-# NOTE: This disables some error checking in ESP-IDF and may lead to unexpected
-# behavior in a few areas. More testing is necessary before this can be enabled
-# by default.
-###############################################################################
-
-# idf_build_set_property(COMPILE_DEFINITIONS "-DNDEBUG" APPEND)
-# idf_build_set_property(COMPILE_DEFINITIONS "-Wno-unused-variable" APPEND)
-# idf_build_set_property(COMPILE_DEFINITIONS "-Wno-unused-but-set-variable" APPEND)
 
 ###############################################################################
 # Search for GZIP application

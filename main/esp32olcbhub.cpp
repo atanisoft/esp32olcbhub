@@ -38,6 +38,7 @@
 #include "nvs_config.hxx"
 
 #include <algorithm>
+#include <bootloader_hal.h>
 #include <driver/i2c.h>
 #include <driver/uart.h>
 #include <esp_err.h>
@@ -47,18 +48,13 @@
 #include <esp_task_wdt.h>
 #include <esp32/rom/rtc.h>
 #include <freertos_includes.h>
+#include <freertos_drivers/esp32/Esp32SocInfo.hxx>
 #include <openlcb/SimpleStack.hxx>
-
-///////////////////////////////////////////////////////////////////////////////
-// If compiling with IDF v4.2+ enable usage of select().
-///////////////////////////////////////////////////////////////////////////////
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4,2,0)
 
 ///////////////////////////////////////////////////////////////////////////////
 // Enable usage of select() for GridConnect connections.
 ///////////////////////////////////////////////////////////////////////////////
 OVERRIDE_CONST_TRUE(gridconnect_tcp_use_select);
-#endif // IDF v4.2+
 
 ///////////////////////////////////////////////////////////////////////////////
 // This will generate newlines after GridConnect each packet being sent.
@@ -69,7 +65,7 @@ OVERRIDE_CONST_TRUE(gc_generate_newlines);
 // Increase the GridConnect buffer size to improve performance by bundling more
 // than one GridConnect packet into the same send() call to the socket.
 ///////////////////////////////////////////////////////////////////////////////
-OVERRIDE_CONST_DEFERRED(gridconnect_buffer_size, CONFIG_LWIP_TCP_MSS);
+OVERRIDE_CONST(gridconnect_buffer_size, CONFIG_LWIP_TCP_MSS);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Increase the time for the buffer to fill up before sending it out over the
@@ -113,8 +109,9 @@ namespace esp32olcbhub
 void start_openlcb_stack(node_config_t *config, bool reset_events
                        , bool brownout_detected);
 }
-
 void start_bootloader_stack(uint64_t id);
+void initialize_bootloader_vars(uint8_t reason);
+void set_bootloader_requested();
 
 extern "C"
 {
@@ -136,76 +133,40 @@ ssize_t os_get_free_heap()
     return heap_caps_get_free_size(MALLOC_CAP_8BIT);
 }
 
-static const char * const reset_reasons[] =
-{
-    "unknown",                  // NO_MEAN                  0
-    "power on reset",           // POWERON_RESET            1
-    "unknown",                  // no key                   2
-    "software reset",           // SW_RESET                 3
-    "watchdog reset (legacy)",  // OWDT_RESET               4
-    "deep sleep reset",         // DEEPSLEEP_RESET          5
-    "reset (SLC)",              // SDIO_RESET               6
-    "watchdog reset (group0)",  // TG0WDT_SYS_RESET         7
-    "watchdog reset (group1)",  // TG1WDT_SYS_RESET         8
-    "RTC system reset",         // RTCWDT_SYS_RESET         9
-    "Intrusion test reset",     // INTRUSION_RESET          10
-    "WDT Timer group reset",    // TGWDT_CPU_RESET          11
-    "software reset (CPU)",     // SW_CPU_RESET             12
-    "RTC WDT reset",            // RTCWDT_CPU_RESET         13
-    "software reset (CPU)",     // EXT_CPU_RESET            14
-    "Brownout reset",           // RTCWDT_BROWN_OUT_RESET   15
-    "RTC Reset (Normal)",       // RTCWDT_RTC_RESET         16
-};
-
 void app_main()
 {
-    // capture the reason for the CPU reset
-    uint8_t reset_reason = rtc_get_reset_reason(PRO_CPU_NUM);
-    uint8_t orig_reset_reason = reset_reason;
-    // Ensure the reset reason it within bounds.
-    if (reset_reason > ARRAYSIZE(reset_reasons))
-    {
-        reset_reason = 0;
-    }
     // silence all but error messages by default
     esp_log_level_set("*", ESP_LOG_ERROR);
 
     GpioInit::hw_init();
 
     const esp_app_desc_t *app_data = esp_ota_get_app_description();
-    LOG(INFO, "\n\n%s %s starting up (%d:%s)...", app_data->project_name
-      , app_data->version, reset_reason, reset_reasons[reset_reason]);
-    LOG(INFO, "Compiled on %s %s using ESP-IDF %s", app_data->date
-      , app_data->time, app_data->idf_ver);
+    LOG(INFO, "\n\n%s %s starting up...", app_data->project_name,
+        app_data->version);
+    LOG(INFO, "Compiled on %s %s using ESP-IDF %s", app_data->date,
+        app_data->time, app_data->idf_ver);
     LOG(INFO, "Running from: %s", esp_ota_get_running_partition()->label);
     LOG(INFO, "%s uses the OpenMRN library\n"
-              "Copyright (c) 2019-2020, OpenMRN\n"
+              "Copyright (c) 2019-2021, OpenMRN\n"
               "All rights reserved.", app_data->project_name);
-    if (reset_reason != orig_reset_reason)
-    {
-        LOG(WARNING, "Reset reason mismatch: %d vs %d", reset_reason
-          , orig_reset_reason);
-    }
+    LOG(INFO, "[SNIP] version:%d, manufacturer:%s, model:%s, hw-v:%s, sw-v:%s",
+        openlcb::SNIP_STATIC_DATA.version,
+        openlcb::SNIP_STATIC_DATA.manufacturer_name,
+        openlcb::SNIP_STATIC_DATA.model_name,
+        openlcb::SNIP_STATIC_DATA.hardware_version,
+        openlcb::SNIP_STATIC_DATA.software_version);
+    uint8_t reset_reason = Esp32SocInfo::print_soc_info();
+    initialize_bootloader_vars(reset_reason);
     nvs_init();
 
     // load non-CDI based config from NVS.
     bool cleanup_config_tree = false;
     bool reset_events = false;
-    bool bootloader = false;
     node_config_t config;
     if (load_config(&config) != ESP_OK)
     {
         default_config(&config);
         cleanup_config_tree = true;
-    }
-
-    // If the flag was set to enter the bootloader on startup, reset it now
-    // so we boot into normal mode on next startup.
-    if (config.bootloader_req)
-    {
-        config.bootloader_req = false;
-        save_config(&config);
-        bootloader = true;
     }
 
     // Check for factory reset button being held to GND and the USER button
@@ -266,7 +227,7 @@ void app_main()
     {
         // If both the factory reset and user button are held to GND it is a
         // request to enter the bootloader mode.
-        bootloader = true;
+        set_bootloader_requested();
 
         // give a visual indicator that the bootloader request has been ACK'd
         // turn on both WiFi and Activity LEDs, wait ~1sec, turn off WiFi LED,
@@ -291,7 +252,7 @@ void app_main()
 
     // If the bootloader has been requested and TWAI is enabled we can start
     // the bootloader stack. Otherwise start the full stack.
-    if (bootloader && !config.disable_twai)
+    if (request_bootloader())
     {
         start_bootloader_stack(config.node_id);
     }

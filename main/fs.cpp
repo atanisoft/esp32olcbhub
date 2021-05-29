@@ -32,6 +32,11 @@
  * @date 4 July 2020
  */
 
+extern "C"
+{
+#include <dirent.h>
+}
+
 #include "fs.hxx"
 #include "sdkconfig.h"
 #if CONFIG_USE_LITTLEFS

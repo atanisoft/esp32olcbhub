@@ -4,10 +4,9 @@ set(deps
     nvs_flash
     vfs
     app_update
-    esp_littlefs
     spiffs
     HttpServer
-    OpenMRNLite
+    OpenMRNIDF
     json
 )
 
@@ -23,7 +22,7 @@ string(SUBSTRING "${project_name}" 0 40 SNIP_PROJECT_NAME)
 
 set(SNIP_HW_VERSION "1.0")
 set(SNIP_PROJECT_PAGE "http://atanisoft.github.io/esp32olcbhub")
-set(CDI_VERSION "0x0101")
+set(CDI_VERSION "0x0102")
 
 set_source_files_properties(usb.cpp PROPERTIES COMPILE_DEFINITIONS "CDI_VERSION=${CDI_VERSION}")
 set_source_files_properties(esp32olcbhub.cpp PROPERTIES COMPILE_FLAGS "-Wno-implicit-fallthrough -Wno-ignored-qualifiers")

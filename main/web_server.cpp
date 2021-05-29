@@ -487,12 +487,6 @@ HTTP_HANDLER_IMPL(fs_proc, request)
     return nullptr;
 }
 
-namespace openlcb
-{
-extern const char CDI_DATA[];
-extern const size_t CDI_SIZE;
-} // namespace openlcb
-
 void init_webserver(openlcb::MemoryConfigClient *cfg_client, uint64_t id)
 {
     const esp_app_desc_t *app_data = esp_ota_get_app_description();
@@ -514,8 +508,6 @@ void init_webserver(openlcb::MemoryConfigClient *cfg_client, uint64_t id)
     http_server->static_uri("/milligram.min.css", normalizeMinCssGz
                           , normalizeMinCssGz_size, http::MIME_TYPE_TEXT_CSS
                           , http::HTTP_ENCODING_GZIP);
-    http_server->static_uri("/cdi.xml", (const uint8_t *)openlcb::CDI_DATA
-                          , openlcb::CDI_SIZE, http::MIME_TYPE_TEXT_XML);
     http_server->websocket_uri("/ws", websocket_proc);
     http_server->uri("/fs", http::HttpMethod::GET, fs_proc);
     http_server->uri("/ota", http::HttpMethod::POST, nullptr, process_ota);
