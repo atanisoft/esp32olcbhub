@@ -16,14 +16,6 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-      - name: Set up Python 3.5
-        uses: actions/setup-python@v1
-        with:
-          python-version: 3.5
-      - name: Install ESP-IDF
-        uses: CalinRadoni/esp-idf-v4-action@v2
-        with:
-          esp_idf_version: 'release/v4.2'
       - name: Update config for IO PCB
         if: ${{ matrix.target == 'ESP32OlcbHub-iopcb' }}
         uses: DamianReeves/write-file-action@master
@@ -31,16 +23,17 @@ jobs:
           path: sdkconfig.defaults
           contents: |
             CONFIG_FACTORY_RESET=39
-            CONFIG_USER_BUTTON=36
           write-mode: append
       - name: Build
+        uses: georgik/esp-idf-ci-action@branch-release-v4.3
+      - name: Prepare Binaries
         run: |
-          source ~/esp/esp-idf/export.sh
-          idf.py reconfigure
-          idf.py app
-          idf.py size
-          mkdir binaries
+          mkdir -p binaries
+          cp .github/firmwarereadme.txt binaries/readme.txt
           cp build/ESP32OlcbHub.bin binaries
+          cp build/partition_table/partition-table.bin binaries
+          cp build/ota_data_initial.bin binaries
+          cp build/bootloader/bootloader.bin binaries
       - name: Package binaries
         uses: actions/upload-artifact@v1
         with:
