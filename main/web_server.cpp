@@ -40,6 +40,7 @@
 #include <cJSON.h>
 #include <esp_log.h>
 #include <esp_ota_ops.h>
+#include <freertos_drivers/esp32/Esp32WiFiManager.hxx>
 #include <Httpd.h>
 #include <HttpStringUtils.h>
 #include <openlcb/MemoryConfigClient.hxx>
@@ -150,16 +151,6 @@ uint64_t string_to_uint64(std::string value)
     // convert the string to a uint64_t value
     return std::stoull(value, nullptr, 16);
 }
-
-#if CONFIG_EXTERNAL_HTTP_EXECUTOR
-static void http_exec_task(void *param)
-{
-    LOG(INFO, "[Httpd] Executor starting...");
-    http_executor.thread_body();
-    LOG(INFO, "[Httpd] Executor stopped...");
-    vTaskDelete(nullptr);
-}
-#endif // CONFIG_EXTERNAL_HTTP_EXECUTOR
 
 using openlcb::MemoryConfigClientRequest;
 using openlcb::MemoryConfigDefs;
@@ -487,13 +478,13 @@ HTTP_HANDLER_IMPL(fs_proc, request)
     return nullptr;
 }
 
-void init_webserver(openlcb::MemoryConfigClient *cfg_client, uint64_t id)
+void init_webserver(Esp32WiFiManager *wifi, openlcb::MemoryConfigClient *cfg_client, uint64_t id)
 {
     const esp_app_desc_t *app_data = esp_ota_get_app_description();
     memory_client = cfg_client;
     node_id = id;
     LOG(INFO, "[Httpd] Initializing webserver");
-    http_server.reset(new http::Httpd(&mdns));
+    http_server.reset(new http::Httpd(wifi, &mdns));
     http_server->redirect_uri("/", "/index.html");
     http_server->static_uri("/index.html", indexHtmlGz, indexHtmlGz_size
                           , http::MIME_TYPE_TEXT_HTML

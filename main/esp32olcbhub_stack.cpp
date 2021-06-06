@@ -220,7 +220,7 @@ void start_openlcb_stack(node_config_t *config, bool reset_events
                          config->softap_pass);
 
     wifi_manager->set_status_led(LED_WIFI_Pin::instance());
-    init_webserver(memory_client.get_mutable(), config->node_id);
+    init_webserver(wifi_manager.get_mutable(), memory_client.get_mutable(), config->node_id);
     factory_reset_helper.emplace();
     event_helper.emplace();
     delayed_reboot.emplace(stack->service());
