@@ -268,4 +268,21 @@ void app_main()
     // handled automatically by ESP-IDF.
 }
 
+
+std::mutex log_mux;
+// OpenMRN log output method, overridden to add mutex guard around fwrite/fputc
+// due to what appears to be a bug in esp-idf where it thinks a recursive mutex
+// is being held and that it is in an ISR context.
+void log_output(char* buf, int size)
+{
+    const std::lock_guard<std::mutex> lock(log_mux);
+    // drop null/short messages
+    if (size <= 0) return;
+
+    // no error checking is done here, any error check logs would get lost if
+    // there was a failure at this point anyway.
+    fwrite(buf, 1, size, stdout);
+    fputc('\n', stdout);
+}
+
 } // extern "C"
