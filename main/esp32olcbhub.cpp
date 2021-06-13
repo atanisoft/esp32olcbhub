@@ -49,6 +49,7 @@
 #include <esp32/rom/rtc.h>
 #include <freertos_includes.h>
 #include <freertos_drivers/esp32/Esp32SocInfo.hxx>
+#include <mutex>
 #include <openlcb/SimpleStack.hxx>
 
 ///////////////////////////////////////////////////////////////////////////////
