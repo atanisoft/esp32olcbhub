@@ -213,7 +213,8 @@ void start_openlcb_stack(node_config_t *config, bool reset_events
     memory_client.emplace(stack->node(), stack->memory_config_handler());
     wifi_manager.emplace(config->station_ssid, config->station_pass,
                          stack.get_mutable(), cfg.seg().wifi(),
-                         config->wifi_mode, config->hostname_prefix,
+                         config->wifi_mode, 2 /* hub enabled */,
+                         config->hostname_prefix,
                          config->sntp_server, config->timezone,
                          config->sntp_enabled, config->softap_channel,
                          config->softap_auth, config->softap_ssid,
